@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Estándar</title>
+  <style>
+    :root{ --panel-bg:#ffeb3b; }
+    body{
+      font-family:Arial, sans-serif;
+      background-image:url('imagenes/Dummys.png');
+      background-size:cover;background-position:center;background-repeat:no-repeat;
+      margin:0;padding:0;height:100vh;overflow:hidden;display:flex;justify-content:flex-end;user-select:none
+    }
+    html,body,*{cursor:none!important}
+
+    /* Imagen del estándar (izquierda, fija/no arrastrable) */
+    #estandar{
+      width:calc(100vw - 250px);height:100vh;position:absolute;top:0;left:0;
+      pointer-events:none;object-fit:contain;background:transparent;
+      transform-origin:0 0; will-change:transform;
+      -webkit-user-drag:none; user-drag:none;
+    }
+
+    /* Capa para gestos (pinch/pan/doble toque) */
+    #zoom-surface{
+      position:absolute;top:0;left:0;width:calc(100vw - 250px);height:100vh;
+      touch-action:none; -webkit-user-select:none; user-select:none;
+      z-index:1;
+    }
+
+    /* Barra lateral (derecha) */
+    #barra-lateral{
+      width:250px;height:100vh;background-color:rgba(255,255,255,.85);
+      display:flex;flex-direction:column;align-items:center;padding:10px;box-sizing:border-box;
+      position:relative;z-index:2;
+    }
+    #casa-button img,#pizarron-button img{width:150px;height:150px;transition:opacity .3s}
+    #casa-button img:hover,#pizarron-button img:hover{opacity:.5}
+
+    /* Botón de encendido circular debajo de la flecha */
+    #powerWrap{margin-top:10px}
+    .power-btn{
+      width:150px;height:150px;border-radius:50%;
+      /* SIN BORDE y texto blanco SIEMPRE (on/off) */
+      border:none !important; color:#fff !important;
+
+      cursor:pointer; font-size:20px;font-weight:900;letter-spacing:.5px;
+      box-shadow:0 10px 28px rgba(0,0,0,.45);
+      display:flex;align-items:center;justify-content:center;text-align:center;user-select:none;
+
+      transition: opacity .3s, transform .08s, box-shadow .2s, filter .2s;
+    }
+    .power-on{background:#2ecc71;}  /* VERDE = encendido (muestra APAGAR) */
+    .power-off{background:#e53935;} /* ROJO  = apagado (muestra ENCENDER) */
+
+    .power-btn:hover,
+    .power-btn:focus{
+      opacity:.85;
+      transform: translateY(-1px);
+      box-shadow:0 16px 40px rgba(0,0,0,.55), 0 0 0 2px rgba(255,255,255,.09) inset;
+    }
+    .power-btn:active{ transform:scale(.98); }
+
+    .container{text-align:center;width:100%;margin-top:auto;margin-bottom:0}
+    .fila{display:flex;flex-direction:column;align-items:center;justify-content:center;margin-bottom:10px;border:1px solid #ccc;padding:10px;border-radius:5px;background-color:var(--panel-bg, #ffeb3b)}
+    .fila h3{margin:0 0 6px;font-size:18px;color:#333;background:#fff;padding:5px 10px;border:1px solid #ccc;border-radius:5px}
+    .contador-container{display:flex;align-items:center;margin-top:6px;gap:10px}
+    .contador{font-size:24px;font-weight:700;margin:0 10px;background:#fff;color:#000;padding:5px 10px;border-radius:5px;border:1px solid #ccc;min-width:28px;text-align:center}
+    .boton-flecha{font-size:14px;padding:5px;border:none;border-radius:5px;cursor:pointer;background:#fff;color:#000;margin:0 5px;border:2px solid #000}
+    .boton-flecha:hover{background:#f0f0f0}
+
+    #pizarron-button{width:100%;text-align:center;margin-top:0}
+
+    .feedback-message{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#4CAF50;color:#fff;padding:10px 20px;border-radius:5px;display:none;transition:opacity .5s;z-index:9999}
+
+    /* Modal confirmación */
+    .confirm-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9998}
+    .confirm-card{width:min(520px,92%);background:#fff;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.35);border:2px solid rgba(0,0,0,.1);padding:18px 16px;text-align:center}
+    .confirm-title{margin:0 0 8px;font-size:20px;font-weight:900;color:#111}
+    .confirm-sub{margin:0 0 14px;font-weight:700;color:#333}
+    .confirm-btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+    .confirm-btn{min-width:220px;height:48px;border-radius:10px;border:2px solid #000;font-weight:900;cursor:pointer;user-select:none;background:#fff;color:#000}
+    .confirm-btn.primary{background:#ffeb3b;border-color:#000}
+    .confirm-btn.secondary{background:#eaeaea;border-color:#000}
+
+    /* OVERLAY negro de "pantalla apagada" + botón único circular flotante */
+    #sleepOverlay{position:fixed;inset:0;background:#000;display:none;z-index:99996}
+    #powerOverlayWrap{
+      position:fixed;right:25px;top:190px;width:150px;height:150px;display:none;z-index:99997;
+    }
+
+    /* Overlay de “Toca para continuar” cuando el navegador exige gesto para FS */
+    #fsPrompt{
+      position:fixed;inset:0;display:none;align-items:center;justify-content:center;
+      background:rgba(0,0,0,.85); color:#fff; z-index:99998;
+      font-weight:900;letter-spacing:.5px;text-align:center;padding:20px;
+    }
+    #fsPrompt .box{
+      background:rgba(255,255,255,.08); border-radius:16px; padding:18px 22px; max-width:90%;
+      border:2px solid rgba(255,255,255,.15);
+    }
+    #fsPrompt .box button{
+      margin-top:12px;padding:10px 16px;border-radius:12px;border:none;font-weight:900;cursor:pointer;
+    }
+
+    @media (max-width:768px){
+      #barra-lateral{width:100%;height:auto;padding:10px 10px 0}
+      #estandar{display:none}
+      #zoom-surface{display:none}
+      .container{margin-bottom:0}
+      #pizarron-button img,#casa-button img{width:100px;height:100px}
+      .power-btn{width:120px;height:120px}
+      #powerOverlayWrap{right:10px;top:150px;width:120px;height:120px}
+    }
+  </style>
+</head>
+<body>
+  <!-- Imagen (el script sustituye la ruta correcta) -->
+  <img id="estandar" src="subensambles/imagenes/D001-14B242.jpg" alt="Imagen de estándares" draggable="false">
+  <!-- Superficie de gestos -->
+  <div id="zoom-surface" aria-hidden="true"></div>
+
+  <div id="barra-lateral">
+    <div id="casa-button">
+      <a id="linkBack" href="javascript:void(0)" aria-label="Volver atrás">
+        <img src="imagenes/Imagen-flrchaatras.png" alt="Volver atrás" draggable="false">
+      </a>
+    </div>
+
+    <!-- Botón circular de encendido/apagado debajo de la flecha -->
+    <div id="powerWrap">
+      <button id="btnPowerSide" class="power-btn power-on" type="button" aria-pressed="false" aria-label="Apagar pantalla">APAGAR</button>
+    </div>
+
+    <div class="container">
+      <div class="fila">
+        <h3>Piezas</h3>
+        <div class="contador-container">
+          <div>
+            <button class="boton-flecha" onclick="cambiar('centenas', +1)">▲</button>
+            <div class="contador" id="centenas">0</div>
+            <button class="boton-flecha" onclick="cambiar('centenas', -1)">▼</button>
+          </div>
+          <div>
+            <button class="boton-flecha" onclick="cambiar('decenas', +1)">▲</button>
+            <div class="contador" id="decenas">0</div>
+            <button class="boton-flecha" onclick="cambiar('decenas', -1)">▼</button>
+          </div>
+          <div>
+            <button class="boton-flecha" onclick="cambiar('unidades', +1)">▲</button>
+            <div class="contador" id="unidades">0</div>
+            <button class="boton-flecha" onclick="cambiar('unidades', -1)">▼</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="pizarron-button">
+      <a id="toPizarron" href="pizarron.htm" aria-label="Ir al pizarrón">
+        <img src="imagenes/imagen-pizarron.png" alt="Pizarrón" draggable="false">
+      </a>
+    </div>
+  </div>
+
+  <!-- Overlay negro + botón único circular para encender -->
+  <div id="sleepOverlay" aria-hidden="true"></div>
+  <div id="powerOverlayWrap">
+    <button id="btnPowerOverlay" class="power-btn power-off" type="button" aria-pressed="true" aria-label="Encender pantalla">ENCENDER</button>
+  </div>
+
+  <!-- Prompt para recuperar pantalla completa cuando el navegador la pierde al cambiar de página -->
+  <div id="fsPrompt">
+    <div class="box">
+      <div>Toca para continuar en pantalla completa</div>
+      <button id="fsBtn">Continuar</button>
+    </div>
+  </div>
+
+  <div class="feedback-message" id="feedback">Datos guardados</div>
+
+  <!-- Modal confirmación -->
+  <div id="confirmModal" class="confirm-backdrop" style="display:none">
+    <div class="confirm-card">
+      <h3 class="confirm-title">¿Ya terminaste las piezas de <span id="stdName"></span>?</h3>
+      <p class="confirm-sub">Elige una opción para continuar.</p>
+      <div class="confirm-btns">
+        <button id="btnYesClean" class="confirm-btn primary">SÍ, LIMPIAR Y REGRESAR</button>
+        <button id="btnNoOnly" class="confirm-btn secondary">NO, SÓLO REGRESAR</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* ====== Bloqueos tipo kiosko ====== */
+window.addEventListener('contextmenu', e => e.preventDefault());
+window.addEventListener('dragstart',  e => e.preventDefault());
+window.addEventListener('selectstart',e => e.preventDefault());
+window.addEventListener('gesturestart', e => e.preventDefault());
+window.addEventListener('wheel', e => { e.preventDefault(); }, {passive:false});
+window.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && ['+','-','=','0'].includes(e.key)) e.preventDefault();
+  if (['F11'].includes(e.key)) e.preventDefault();
+});
+
+/* ====== Pantalla completa robusta entre páginas ====== */
+const FS_FLAG='dummys_fs_intent';
+const docEl=document.documentElement;
+
+function isFS(){
+  return !!(document.fullscreenElement||document.webkitFullscreenElement||document.mozFullScreenElement||document.msFullscreenElement);
+}
+function reqFS(){
+  const r=docEl.requestFullscreen||docEl.webkitRequestFullscreen||docEl.mozRequestFullScreen||docEl.msRequestFullscreen;
+  if(r) return r.call(docEl).catch(()=>{});
+}
+function showFSPrompt(){
+  const p=document.getElementById('fsPrompt');
+  p.style.display='flex';
+}
+function hideFSPrompt(){
+  const p=document.getElementById('fsPrompt');
+  p.style.display='none';
+}
+function ensureFSByGesture(){
+  const once=()=>{ hideFSPrompt(); reqFS(); window.removeEventListener('pointerdown',once,true); window.removeEventListener('keydown',once,true); };
+  window.addEventListener('pointerdown',once,true);
+  window.addEventListener('keydown',once,true);
+}
+
+function tryEnterFSImmediate(){
+  // Intento directo
+  reqFS();
+  // Si no queda, mostramos prompt para tocar
+  setTimeout(()=>{ if(!isFS()) showFSPrompt(); }, 150);
+  ensureFSByGesture();
+}
+
+function markLeaving(){
+  try{ sessionStorage.setItem(FS_FLAG,'1'); }catch(e){}
+}
+function autoFS(){
+  // Re-intentar al mostrar la página (navegación/volver)
+  window.addEventListener('pageshow', ()=>{ if (sessionStorage.getItem(FS_FLAG)==='1' || /[?#&]fs=1\b/.test(location.href)) { tryEnterFSImmediate(); sessionStorage.removeItem(FS_FLAG); } });
+  // Cambios de FS o visibilidad: si se pierde, intentar recuperar
+  const reenter=()=>{ if(!isFS()) { tryEnterFSImmediate(); } };
+  ['fullscreenchange','webkitfullscreenchange','mozfullscreenchange','MSFullscreenChange','visibilitychange'].forEach(evt=>document.addEventListener(evt,reenter));
+
+  // Primer intento al cargar si viene marcado
+  if (sessionStorage.getItem(FS_FLAG)==='1' || /[?#&]fs=1\b/.test(location.href)) {
+    tryEnterFSImmediate();
+    sessionStorage.removeItem(FS_FLAG);
+  } else {
+    // Si no está marcado, pedimos FS una vez por gesto
+    ensureFSByGesture();
+  }
+
+  // Botón del prompt
+  const fsBtn=document.getElementById('fsBtn');
+  if(fsBtn){ fsBtn.addEventListener('click', ()=>{ hideFSPrompt(); tryEnterFSImmediate(); }); }
+
+  // Marcar al salir de la página
+  window.addEventListener('beforeunload', markLeaving);
+
+  // Interceptar TODOS los enlaces para mantener FS en la siguiente página
+  document.addEventListener('click', (e)=>{
+    const a=e.target.closest && e.target.closest('a[href]');
+    if(!a) return;
+    const href=a.getAttribute('href');
+    if(!href || href.startsWith('javascript:') || href.startsWith('#')) return;
+    markLeaving();
+    // añadir ?fs=1 o &fs=1 al destino (por si sessionStorage no sobrevive en el navegador)
+    try{
+      const url = new URL(href, location.href);
+      url.searchParams.set('fs','1');
+      a.setAttribute('href', url.toString());
+    }catch(_){}
+  }, true);
+}
+
+document.addEventListener('DOMContentLoaded', autoFS);
+
+/* ====== Utilidades ====== */
+function clamp9(n){ n=parseInt(n,10); if(isNaN(n)) n=0; return Math.max(0, Math.min(9, n)); }
+function qs(id){ return document.getElementById(id); }
+function deaccent(s){ return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
+function normalizeRelPath(p){
+  let s=String(p||'').trim().replace(/^["']+|["']+$/g,'');
+  s=s.replace(/\\/g,'/').replace(/^\/+/, '');
+  if(/^dummys\//i.test(s)) s=s.replace(/^dummys\//i,'');
+  s=s.replace(/\/{2,}/g,'/');
+  return s;
+}
+
+/* ====== Hash (LABEL, LINEA, COLOR HEX) ====== */
+function splitHash(){
+  const raw = decodeURIComponent((location.hash||'').replace(/^#/,'')).trim();
+  if(!raw) return [];
+  return raw.split(',').map(s=>s.trim()).filter(Boolean);
+}
+function isHexColor(s){ return /^#[0-9a-f]{3,8}$/i.test(String(s||'').trim()); }
+function parseHash(){
+  const parts = splitHash();
+  const result = { label:'', linea:'', color:'' };
+  if(!parts.length) return result;
+  result.label = (parts[0]||'').toUpperCase();
+  for (let i=1;i<parts.length;i++){
+    const tok = parts[i];
+    if (!tok) continue;
+    if (!result.color && isHexColor(tok)) result.color = tok;
+    else if (!result.linea) result.linea = String(tok||'').toUpperCase();
+  }
+  return result;
+}
+const HASH_INFO = parseHash();
+function getSTD(){   return HASH_INFO.label; }
+function getLINEA(){ return HASH_INFO.linea || (localStorage.getItem('dummys_linea_actual_v10')||'').toUpperCase(); }
+function getCOLOR(){
+  if (HASH_INFO.color) return HASH_INFO.color;
+  const saved = localStorage.getItem(`dummys_color_for_${getSTD()}`) || localStorage.getItem('dummys_last_color') || '';
+  return saved;
+}
+
+/* ====== ID key (D* y R*) ====== */
+function idKeyFromLabel(L){
+  const m = String(L||'').toUpperCase().match(/^(D\d+|R\d+)/);
+  return m ? m[1] : String(L||'').toUpperCase();
+}
+
+/* ====== Contadores ====== */
+function ckey(tipo,label){ return `dummys_count_${String(tipo)}__${String(label||'').toUpperCase()}`; }
+function leer(tipo,label){
+  const v = localStorage.getItem(ckey(tipo,label));
+  if (v !== null) return clamp9(v);
+  const v2 = localStorage.getItem(`${tipo}-${String(label).toUpperCase()}`);
+  return clamp9(v2);
+}
+function writeUnified(tipo,label,val){
+  const std = String(label||'').toUpperCase();
+  localStorage.setItem(ckey(tipo,label), String(val));
+  localStorage.setItem(`${tipo}-${std}`, String(val)); // legacy
+  try{ localStorage.setItem('dummys_counts_bump', String(Date.now())); }catch(e){}
+}
+
+/* ====== Resolución de imagen ====== */
+const EXTS = ['jpg','jpeg','png','JPG','JPEG','PNG'];
+function readStoredList(){
+  try {
+    const arr = JSON.parse(localStorage.getItem('dummys_rel_paths_master_v2')||'[]') || [];
+    return Array.from(new Set(arr.map(normalizeRelPath)));
+  } catch { return []; }
+}
+function findMatchesInStored(stems){
+  const rels = readStoredList();
+  const wanted = new Set();
+  stems.forEach(s=>{ EXTS.forEach(ext=> wanted.add(`${String(s).toUpperCase()}.${ext.toUpperCase()}`)); });
+  const hits = [];
+  for (let rel of rels){
+    const norm = normalizeRelPath(rel);
+    const base = (norm.split(/[\\/]/).pop() || '').toUpperCase();
+    if (wanted.has(base)) hits.push(norm);
+  }
+  return hits;
+}
+function colorVariants(color){
+  if(!color) return [''];
+  const raw=String(color).trim();
+  const dec=deaccent(raw);
+  const nospace=raw.replace(/\s+/g,'');
+  const nospaceDec=dec.replace(/\s+/g,'');
+  const hyphen=raw.replace(/\s+/g,'-');
+  const hyphenDec=dec.replace(/\s+/g,'-');
+  const uniq=Array.from(new Set([raw,dec,nospace,nospaceDec,hyphen,hyphenDec]));
+  const withSlash=uniq.map(s=> s ? (s.endsWith('/')?s:(s+'/')) : '');
+  return Array.from(new Set(['', ...withSlash]));
+}
+function buildRelBases(color){
+  const C = colorVariants(color);
+  const templates = [
+    'subensambles/imagenes/{c}','subensambles/{c}','imagenes/{c}',
+    '{c}subensambles/imagenes/','{c}subensambles/','{c}imagenes/','{c}',
+    'colores/{c}','{c}colores/'
+  ];
+  const out = [];
+  templates.forEach(t=> C.forEach(cv=> out.push(t.replace('{c}', cv))));
+  ['', 'subensambles/imagenes/','subensambles/','imagenes/','colores/'].forEach(b=>out.push(b));
+  return Array.from(new Set(out));
+}
+function nameStemVariants(s){
+  const u=String(s||'').toUpperCase().trim();
+  const noDash=u.replace(/[-_ ]+/g,'');
+  const withSp=u.replace(/[-_]+/g,' ');
+  const withDash=u.replace(/[\s_]+/g,'-');
+  return Array.from(new Set([u,noDash,withSp,withDash]));
+}
+function getStoredImageHint(label,linea){
+  try{
+    const key=`dummys_img_for_${String(label||'').toUpperCase()}__${String(linea||'').toUpperCase()}`;
+    return normalizeRelPath(localStorage.getItem(key) || '');
+  }catch{ return ''; }
+}
+function buildImageCandidates(LABEL, LINEA, COLOR){
+  const IDKEY = idKeyFromLabel(LABEL);
+  const stems=[];
+  if (LABEL && LINEA){
+    nameStemVariants(LABEL).forEach(v=>stems.push(`${v}-${LINEA}`,`${v} ${LINEA}`,`${v}${LINEA}`));
+    if (IDKEY !== LABEL) nameStemVariants(IDKEY).forEach(v=>stems.push(`${v}-${LINEA}`,`${v} ${LINEA}`,`${v}${LINEA}`));
+  }
+  if (LABEL){
+    nameStemVariants(LABEL).forEach(v=>stems.push(v));
+    if (IDKEY !== LABEL) nameStemVariants(IDKEY).forEach(v=>stems.push(v));
+  }
+  const bases=buildRelBases(COLOR);
+  const urls=[];
+  const hinted=getStoredImageHint(LABEL,LINEA);
+  if(hinted) urls.push(hinted);
+  for (const base of bases){
+    for (const stem of stems){
+      for (const ext of EXTS){
+        urls.push(normalizeRelPath(`${base}${stem}.${ext}`));
+      }
+    }
+  }
+  // fallback por IDKEY (cualquier imagen que empiece por ese ID)
+  const rels = readStoredList();
+  const idPrefix = IDKEY.toUpperCase();
+  for (const rel of rels){
+    const base = (rel.split('/').pop()||'').toUpperCase();
+    if (EXTS.some(e=>base.endsWith('.'+e.toUpperCase())) && base.startsWith(idPrefix)){
+      urls.push(rel);
+    }
+  }
+  // hits exactos de stems
+  const storedHits=findMatchesInStored(stems);
+  storedHits.forEach(p=>urls.push(p));
+  // la actual
+  const current=qs('estandar')?.getAttribute('src');
+  if(current) urls.push(normalizeRelPath(current));
+  return Array.from(new Set(urls));
+}
+function setImageWithFallback(urls){
+  const img=qs('estandar'); if(!img) return;
+  let i=0; const test=new Image();
+  const next=()=>{
+    if(i>=urls.length){ console.warn('No se encontró imagen para el estándar.'); return; }
+    const url=urls[i++];
+    test.onload = ()=>{ img.src = url + (url.includes('?')?'&':'?') + 'v=' + Date.now(); };
+    test.onerror = next;
+    test.src = url + (url.includes('?')?'&':'?') + 'ping=' + Date.now();
+  };
+  next();
+}
+
+/* ====== Lógica de UI principal ====== */
+const LABEL = getSTD();
+const LINEA = getLINEA();
+const COLOR = getCOLOR();
+
+function cambiar(tipo, delta){
+  const el = qs(tipo);
+  let v = clamp9((parseInt(el.textContent)||0) + delta);
+  el.textContent = v;
+  writeUnified(tipo, LABEL||'DEFAULT', v);
+  const f = qs('feedback');
+  f.textContent = 'Datos guardados';
+  f.style.display = 'block';
+  clearTimeout(cambiar._t);
+  cambiar._t = setTimeout(()=> f.style.display = 'none', 1200);
+}
+function setPanelColor(){
+  if (COLOR && isHexColor(COLOR)){
+    document.documentElement.style.setProperty('--panel-bg', COLOR);
+    try{ localStorage.setItem('dummys_last_color', COLOR); }catch(e){}
+  } else {
+    const saved = localStorage.getItem(`dummys_color_for_${LABEL}`);
+    if (saved && isHexColor(saved)) document.documentElement.style.setProperty('--panel-bg', saved);
+  }
+}
+function buildPizarronHref(){
+  const base='pizarron.htm'; const parts=[encodeURIComponent(LABEL)];
+  if (LINEA) parts.push(encodeURIComponent(LINEA));
+  if (COLOR && isHexColor(COLOR)) parts.push(encodeURIComponent(COLOR));
+  return `${base}#${parts.join(',')}`;
+}
+function limpiarActual(){ ['centenas','decenas','unidades'].forEach(t=>writeUnified(t, LABEL||'DEFAULT', 0)); }
+
+function setupConfirmReturn(){
+  const link = qs('toPizarron');
+  if(!link) return;
+  link.addEventListener('click',(ev)=>{
+    ev.preventDefault();
+    // Marcar intención de FS al salir y añadir ?fs=1
+    try{ sessionStorage.setItem(FS_FLAG,'1'); }catch(e){}
+    const url=new URL(link.href, location.href); url.searchParams.set('fs','1'); link.href=url.toString();
+
+    const modal=qs('confirmModal');
+    const nameSpan=qs('stdName'); if(nameSpan) nameSpan.textContent = LABEL || 'D00*';
+    modal.style.display='flex';
+    const yes=qs('btnYesClean'); const no=qs('btnNoOnly');
+    const goOut=(clean)=>{ modal.style.display='none'; if(clean) limpiarActual(); location.href=link.href; };
+    yes.onclick=()=>goOut(true); no.onclick=()=>goOut(false);
+  });
+
+  // Botón atrás: simular back manteniendo FS flag
+  const back = qs('linkBack');
+  if(back){
+    back.addEventListener('click', ()=>{
+      try{ sessionStorage.setItem(FS_FLAG,'1'); }catch(e){}
+      history.back();
+    });
+  }
+}
+
+/* ====== Zoom táctil (pinch, pan, doble toque para reset) ====== */
+(function enableTouchZoom(){
+  const surface=qs('zoom-surface'); const img=qs('estandar');
+  if(!surface||!img) return;
+  let scale=1, minS=1, maxS=5, tx=0, ty=0;
+  let lastTouches=[], lastDist=0, lastCenter={x:0,y:0}, lastTapTime=0;
+  function apply(){ img.style.transform=`translate(${tx}px, ${ty}px) scale(${scale})`; }
+  function dist(a,b){ return Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY); }
+  function center(a,b){ return {x:(a.clientX+b.clientX)/2, y:(a.clientY+b.clientY)/2}; }
+  function onPointerDown(e){ e.preventDefault(); surface.setPointerCapture && surface.setPointerCapture(e.pointerId); }
+  function onTouchStart(e){
+    e.preventDefault(); const now=Date.now();
+    if(e.touches.length===1){ if(now-lastTapTime<300){ scale=1; tx=0; ty=0; apply(); } lastTapTime=now; }
+    lastTouches=Array.from(e.touches);
+    if(e.touches.length===2){ lastDist=dist(e.touches[0],e.touches[1])||1; lastCenter=center(e.touches[0],e.touches[1]); }
+  }
+  function onTouchMove(e){
+    e.preventDefault(); const t=Array.from(e.touches);
+    if(t.length===2){
+      const d=dist(t[0],t[1])||1, c=center(t[0],t[1]); const ds=d/(lastDist||d);
+      const prev=scale; scale=Math.min(maxS, Math.max(minS, scale*ds)); const k=scale/(prev||1);
+      tx=(tx-c.x)*k+c.x; ty=(ty-c.y)*k+c.y;
+      lastDist=d; lastCenter=c; apply();
+    } else if(t.length===1 && lastTouches.length===1){
+      const cur=t[0], prev=lastTouches[0]; tx+=cur.clientX-prev.clientX; ty+=cur.clientY-prev.clientY; apply();
+    }
+    lastTouches=t;
+  }
+  function onTouchEnd(e){ e.preventDefault(); lastTouches=Array.from(e.touches); if(lastTouches.length<2){ lastDist=0; } }
+  surface.addEventListener('touchstart',onTouchStart,{passive:false});
+  surface.addEventListener('touchmove', onTouchMove ,{passive:false});
+  surface.addEventListener('touchend' , onTouchEnd  ,{passive:false});
+  surface.addEventListener('touchcancel',onTouchEnd  ,{passive:false});
+  surface.addEventListener('wheel', e=>e.preventDefault(), {passive:false});
+  surface.addEventListener('pointerdown', onPointerDown);
+})();
+
+/* ====== Botón circular de encendido/apagado ====== */
+let sleeping=false;
+function updatePowerUI(){
+  const side=qs('btnPowerSide');
+  const over=qs('btnPowerOverlay');
+  const overlay=qs('sleepOverlay');
+  if(!sleeping){
+    overlay.style.display='none';
+    qs('powerOverlayWrap').style.display='none';
+    side.classList.remove('power-off'); side.classList.add('power-on');
+    side.textContent='APAGAR'; side.setAttribute('aria-pressed','false'); side.setAttribute('aria-label','Apagar pantalla');
+  }else{
+    overlay.style.display='block';
+    qs('powerOverlayWrap').style.display='block';
+    side.classList.remove('power-on'); side.classList.add('power-off');
+    side.textContent='ENCENDER'; side.setAttribute('aria-pressed','true'); side.setAttribute('aria-label','Encender pantalla');
+
+    over.classList.remove('power-on'); over.classList.add('power-off');
+    over.textContent='ENCENDER'; over.setAttribute('aria-pressed','true'); over.setAttribute('aria-label','Encender pantalla');
+  }
+}
+function togglePower(){ sleeping=!sleeping; updatePowerUI(); }
+
+/* ====== Carga inicial ====== */
+document.addEventListener('DOMContentLoaded', ()=>{
+  // Contadores
+  ['centenas','decenas','unidades'].forEach(t=> qs(t).textContent = leer(t, LABEL||'DEFAULT'));
+  // Imagen (más robusto + fallback por idKey)
+  if(LABEL){ const urls=buildImageCandidates(LABEL, LINEA, COLOR); setImageWithFallback(urls); }
+  // Color panel
+  setPanelColor();
+  // Link al pizarrón con hash
+  const a=document.querySelector('#toPizarron'); if(a){ a.href=buildPizarronHref(); }
+  // Confirmación al volver
+  setupConfirmReturn();
+  // Power button listeners
+  qs('btnPowerSide').addEventListener('click', togglePower);
+  qs('btnPowerOverlay').addEventListener('click', togglePower);
+  updatePowerUI();
+});
+
+/* Sincroniza contadores si cambian en otra pestaña */
+window.addEventListener('storage', (e)=>{
+  if(!e.key) return;
+  if(/^dummys_count_/.test(e.key)){
+    if(!LABEL) return;
+    ['centenas','decenas','unidades'].forEach(t=>{ qs(t).textContent = leer(t, LABEL||'DEFAULT'); });
+  }
+});
+
+/* Extra: por si algún navegador ignora pointer-events en la imagen */
+document.getElementById('estandar').addEventListener('dragstart', e => e.preventDefault());
+try { localStorage.setItem('dummys_counts_bump', String(Date.now())); } catch(e){}
+</script>
+</body>
+</html>
