@@ -61,7 +61,7 @@
 
     .feedback-message{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#4CAF50;color:#fff;padding:10px 20px;border-radius:5px;display:none;transition:opacity .5s;z-index:9999}
 
-    .confirm-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9998}
+    .confirm-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:9998}
     .confirm-card{width:min(520px,92%);background:#fff;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.35);border:2px solid rgba(0,0,0,.1);padding:18px 16px;text-align:center}
     .confirm-title{margin:0 0 8px;font-size:20px;font-weight:900;color:#111}
     .confirm-sub{margin:0 0 14px;font-weight:700;color:#333}
@@ -146,6 +146,7 @@
     </div>
   </div>
 
+
 <script>
 /* ====== Bloqueos tipo kiosko ====== */
 window.addEventListener('contextmenu', e => e.preventDefault());
@@ -195,16 +196,81 @@ function autoFS(){
 }
 document.addEventListener('DOMContentLoaded', autoFS);
 
-/* ====== Utilidades ====== */
-function clamp9(n){ n=parseInt(n,10); if(isNaN(n)) n=0; return Math.max(0, Math.min(9, n)); }
-function qs(id){ return document.getElementById(id); }
-function deaccent(s){ return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
+/* ====== (NUEVO) Persistencia compartida con el Menú ====== */
+const STORAGE_KEY  = 'dummys_rel_paths_master_v2';
+const CLEAN_KEY    = 'dummys_clean_mode_v1';
+const SNAPSHOT_KEY = 'dummys_snapshot_data_v1';
+const SAVED_FLAG   = 'dummys_saved_ok_v1';
+
+/* Utilidades mínimas para leer catálogo/snapshot */
 function normalizeRelPath(p){
   let s=String(p||'').trim().replace(/^["']+|["']+$/g,'');
   s=s.replace(/\\/g,'/').replace(/^\/+/, '');
+  if(/^dummys\//i.test(s)) s=s.replace(/^dummys\//i,'');
   s=s.replace(/\/{2,}/g,'/');
   return s;
 }
+function readStored(){
+  try{
+    if(localStorage.getItem(CLEAN_KEY)==='1') return [];
+    const arr=JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]')||[];
+    return Array.from(new Set(arr.map(normalizeRelPath)));
+  }catch{return[]}
+}
+/* Si hay snapshot válido y no está en modo limpio, lo copia a STORAGE_KEY */
+function ensureCatalogFromSnapshot(){
+  try{
+    if(localStorage.getItem(CLEAN_KEY)==='1'){
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
+      return false;
+    }
+    const hasSaved = localStorage.getItem(SAVED_FLAG)==='1';
+    const snap = localStorage.getItem(SNAPSHOT_KEY);
+    if(hasSaved && snap){
+      localStorage.setItem(STORAGE_KEY, snap);
+    }
+  }catch(e){}
+  return (readStored().length>0);
+}
+/* Overlay de “no hay datos” */
+function showNoDataOverlay(msg){
+  const ov=document.createElement('div');
+  ov.style.position='fixed';
+  ov.style.inset='0';
+  ov.style.background='rgba(0,0,0,.55)';
+  ov.style.display='flex';
+  ov.style.flexDirection='column';
+  ov.style.alignItems='center';
+  ov.style.justifyContent='center';
+  ov.style.zIndex='999999';
+
+  const card=document.createElement('div');
+  card.style.background='rgba(255,255,255,.97)';
+  card.style.border='2px solid rgba(0,0,0,.15)';
+  card.style.borderRadius='16px';
+  card.style.boxShadow='0 12px 30px rgba(0,0,0,.35)';
+  card.style.padding='22px 20px';
+  card.style.width='min(520px,92%)';
+  card.style.textAlign='center';
+  card.innerHTML = `
+    <div style="font-size:22px;font-weight:900;margin-bottom:6px">Sin datos cargados</div>
+    <div style="font-size:15px;color:#333;margin-bottom:14px">${msg||'Usa CONFIGURACIÓN en el Menú para seleccionar carpeta y GUARDAR.'}</div>
+    <a href="menu-principal.html" style="display:inline-block;padding:10px 16px;border-radius:10px;border:2px solid #000;background:#ffeb3b;font-weight:900;text-decoration:none;color:#000">Volver al Menú</a>
+  `;
+  ov.appendChild(card);
+  document.body.appendChild(ov);
+
+  // Bloquear gestos básicos sobre el overlay
+  window.addEventListener('contextmenu',e=>e.preventDefault());
+  window.addEventListener('dragstart', e=>e.preventDefault());
+  window.addEventListener('selectstart', e=>e.preventDefault());
+  window.addEventListener('wheel', e=>{ e.preventDefault(); }, {passive:false});
+}
+
+/* ====== Utilidades varias de esta página ====== */
+function clamp9(n){ n=parseInt(n,10); if(isNaN(n)) n=0; return Math.max(0, Math.min(9, n)); }
+function qs(id){ return document.getElementById(id); }
+function deaccent(s){ return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
 
 /* ====== Hash (LABEL, LINEA, COLOR HEX) ====== */
 function splitHash(){
@@ -229,26 +295,11 @@ function parseHash(){
 const HASH_INFO = parseHash();
 function getSTD(){   return HASH_INFO.label; }
 function getLINEA(){ return HASH_INFO.linea || (localStorage.getItem('dummys_linea_actual_v10')||'').toUpperCase(); }
-
-/* === [PARCHE] Inferir LABEL desde el src actual si no viene en el hash === */
-function inferStdFromImg(){
-  const img = document.getElementById('estandar');
-  if(!img) return '';
-  const src = normalizeRelPath(img.getAttribute('src')||'');
-  const base = (src.split('/').pop() || '').replace(/\.[^.]+$/,''); // sin extensión
-  return String(base||'').toUpperCase();
-}
-
-/* ====== UI principal (LABEL robusto) ====== */
-const LABEL  = getSTD();                 // puede venir vacío
-const ELABEL = LABEL || inferStdFromImg(); // usar siempre este
-const LINEA  = getLINEA();
-/* COLOR: prioridad hash > color guardado para ELABEL > último color */
-const COLOR  = (()=>{
+function getCOLOR(){
   if (HASH_INFO.color) return HASH_INFO.color;
-  return localStorage.getItem(`dummys_color_for_${ELABEL}`) ||
-         localStorage.getItem('dummys_last_color') || '';
-})();
+  const saved = localStorage.getItem(`dummys_color_for_${getSTD()}`) || localStorage.getItem('dummys_last_color') || '';
+  return saved;
+}
 
 /* ====== Contadores ====== */
 function ckey(tipo,label){ return `dummys_count_${String(tipo)}__${String(label||'').toUpperCase()}`; }
@@ -315,15 +366,15 @@ function getStoredImageHint(label,linea){
     return normalizeRelPath(localStorage.getItem(key) || '');
   }catch{ return ''; }
 }
-function buildImageCandidates(LABELx, LINEAx, COLORx){
+function buildImageCandidates(LABEL, LINEA, COLOR){
   const stems=[];
-  if (LABELx && LINEAx){
-    stems.push(`${LABELx}-${LINEAx}`, `${LABELx} ${LINEAx}`, `${LABELx}${LINEAx}`);
+  if (LABEL && LINEA){
+    stems.push(`${LABEL}-${LINEA}`, `${LABEL} ${LINEA}`, `${LABEL}${LINEA}`);
   }
-  if (LABELx){ stems.push(LABELx); }
-  const bases=buildRelBases(COLORx);
+  if (LABEL){ stems.push(LABEL); }
+  const bases=buildRelBases(COLOR);
   const urls=[];
-  const hinted=getStoredImageHint(LABELx,LINEAx);
+  const hinted=getStoredImageHint(LABEL,LINEA);
   if(hinted) urls.push(hinted);
   for (const base of bases){
     for (const stem of stems){
@@ -352,11 +403,15 @@ function setImageWithFallback(urls){
 }
 
 /* ====== UI principal ====== */
+const LABEL = getSTD();
+const LINEA = getLINEA();
+const COLOR = getCOLOR();
+
 function cambiar(tipo, delta){
   const el = qs(tipo);
   let v = clamp9((parseInt(el.textContent)||0) + delta);
   el.textContent = v;
-  writeUnified(tipo, ELABEL||'DEFAULT', v);
+  writeUnified(tipo, LABEL||'DEFAULT', v);
   const f = qs('feedback');
   f.textContent = 'Datos guardados';
   f.style.display = 'block';
@@ -368,17 +423,17 @@ function setPanelColor(){
     document.documentElement.style.setProperty('--panel-bg', COLOR);
     try{ localStorage.setItem('dummys_last_color', COLOR); }catch(e){}
   } else {
-    const saved = localStorage.getItem(`dummys_color_for_${ELABEL}`);
+    const saved = localStorage.getItem(`dummys_color_for_${LABEL}`);
     if (saved && isHexColor(saved)) document.documentElement.style.setProperty('--panel-bg', saved);
   }
 }
 function buildPizarronHref(){
-  const base='pizarron.htm'; const parts=[encodeURIComponent(ELABEL||'')];
+  const base='pizarron.htm'; const parts=[encodeURIComponent(LABEL)];
   if (LINEA) parts.push(encodeURIComponent(LINEA));
   if (COLOR && isHexColor(COLOR)) parts.push(encodeURIComponent(COLOR));
-  return `${base}#${parts.filter(Boolean).join(',')}`;
+  return `${base}#${parts.join(',')}`;
 }
-function limpiarActual(){ ['centenas','decenas','unidades'].forEach(t=>writeUnified(t, ELABEL||'DEFAULT', 0)); }
+function limpiarActual(){ ['centenas','decenas','unidades'].forEach(t=>writeUnified(t, LABEL||'DEFAULT', 0)); }
 function setupConfirmReturn(){
   const link = qs('toPizarron');
   if(!link) return;
@@ -387,7 +442,7 @@ function setupConfirmReturn(){
     try{ sessionStorage.setItem(FS_FLAG,'1'); }catch(e){}
     const url=new URL(link.href, location.href); url.searchParams.set('fs','1'); link.href=url.toString();
     const modal=qs('confirmModal');
-    const nameSpan=qs('stdName'); if(nameSpan) nameSpan.textContent = ELABEL || 'D00*';
+    const nameSpan=qs('stdName'); if(nameSpan) nameSpan.textContent = LABEL || 'D00*';
     modal.style.display='flex';
     const yes=qs('btnYesClean'); const no=qs('btnNoOnly');
     const goOut=(clean)=>{ modal.style.display='none'; if(clean) limpiarActual(); location.href=link.href; };
@@ -402,65 +457,35 @@ function setupConfirmReturn(){
   }
 }
 
-/* ====== Zoom táctil (sin paneo con un dedo, solo pinch-to-zoom y doble toque para reset) ====== */
+/* ====== Zoom táctil ====== */
 (function enableTouchZoom(){
   const surface=qs('zoom-surface'); const img=qs('estandar');
   if(!surface||!img) return;
   let scale=1, minS=1, maxS=5, tx=0, ty=0;
   let lastTouches=[], lastDist=0, lastCenter={x:0,y:0}, lastTapTime=0;
-
   function apply(){ img.style.transform=`translate(${tx}px, ${ty}px) scale(${scale})`; }
   function dist(a,b){ return Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY); }
   function center(a,b){ return {x:(a.clientX+b.clientX)/2, y:(a.clientY+b.clientY)/2}; }
-
   function onPointerDown(e){ e.preventDefault(); surface.setPointerCapture && surface.setPointerCapture(e.pointerId); }
-
   function onTouchStart(e){
-    e.preventDefault();
-    const now=Date.now();
-    if(e.touches.length===1){
-      if(now-lastTapTime<300){ scale=1; tx=0; ty=0; apply(); } // doble toque = reset
-      lastTapTime=now;
-    }
+    e.preventDefault(); const now=Date.now();
+    if(e.touches.length===1){ if(now-lastTapTime<300){ scale=1; tx=0; ty=0; apply(); } lastTapTime=now; }
     lastTouches=Array.from(e.touches);
-    if(e.touches.length===2){
-      lastDist=dist(e.touches[0],e.touches[1])||1;
-      lastCenter=center(e.touches[0],e.touches[1]);
-    }
+    if(e.touches.length===2){ lastDist=dist(e.touches[0],e.touches[1])||1; lastCenter=center(e.touches[0],e.touches[1]); }
   }
-
   function onTouchMove(e){
-    e.preventDefault();
-    const t=Array.from(e.touches);
-
+    e.preventDefault(); const t=Array.from(e.touches);
     if(t.length===2){
-      // Pinch-to-zoom permitido
-      const d=dist(t[0],t[1])||1;
-      const c=center(t[0],t[1]);
-      const ds=d/(lastDist||d);
-
-      const prev=scale;
-      scale=Math.min(maxS, Math.max(minS, scale*ds));
-      const k=scale/(prev||1);
-
-      // Mantener el centro del pellizco
-      tx=(tx-c.x)*k+c.x;
-      ty=(ty-c.y)*k+c.y;
-
-      lastDist=d;
-      lastCenter=c;
-      apply();
+      const d=dist(t[0],t[1])||1, c=center(t[0],t[1]); const ds=d/(lastDist||d);
+      const prev=scale; scale=Math.min(maxS, Math.max(minS, scale*ds)); const k=scale/(prev||1);
+      tx=(tx-c.x)*k+c.x; ty=(ty-c.y)*k+c.y;
+      lastDist=d; lastCenter=c; apply();
+    } else if(t.length===1 && lastTouches.length===1){
+      const cur=t[0], prev=lastTouches[0]; tx+=cur.clientX-prev.clientX; ty+=cur.clientY-prev.clientY; apply();
     }
-    // 1 dedo: no pan
     lastTouches=t;
   }
-
-  function onTouchEnd(e){
-    e.preventDefault();
-    lastTouches=Array.from(e.touches);
-    if(lastTouches.length<2){ lastDist=0; }
-  }
-
+  function onTouchEnd(e){ e.preventDefault(); lastTouches=Array.from(e.touches); if(lastTouches.length<2){ lastDist=0; } }
   surface.addEventListener('touchstart',onTouchStart,{passive:false});
   surface.addEventListener('touchmove', onTouchMove ,{passive:false});
   surface.addEventListener('touchend' , onTouchEnd  ,{passive:false});
@@ -491,11 +516,20 @@ function updatePowerUI(){
 }
 function togglePower(){ sleeping=!sleeping; updatePowerUI(); }
 
-/* ====== Carga inicial ====== */
+/* ====== Carga inicial (con guardado/restauración) ====== */
 document.addEventListener('DOMContentLoaded', ()=>{
-  ['centenas','decenas','unidades'].forEach(t=> qs(t).textContent = leer(t, ELABEL||'DEFAULT'));
-  const urls=buildImageCandidates(ELABEL, LINEA, COLOR);
-  setImageWithFallback(urls);
+  // 1) Intentar restaurar catálogo desde snapshot (si no está en modo limpio)
+  const hasData = ensureCatalogFromSnapshot();
+
+  // 2) Si no hay datos, mostrar overlay y abortar inicialización
+  if(!hasData){
+    showNoDataOverlay('No hay estándares cargados. En el Menú: SELECCIONAR CARPETA y luego GUARDAR.');
+    return;
+  }
+
+  // 3) Con datos listos, continuar inicialización normal
+  ['centenas','decenas','unidades'].forEach(t=> qs(t).textContent = leer(t, LABEL||'DEFAULT'));
+  if(LABEL){ const urls=buildImageCandidates(LABEL, LINEA, COLOR); setImageWithFallback(urls); }
   setPanelColor();
   const a=document.querySelector('#toPizarron'); if(a){ a.href=buildPizarronHref(); }
   setupConfirmReturn();
@@ -508,8 +542,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
 window.addEventListener('storage', (e)=>{
   if(!e.key) return;
   if(/^dummys_count_/.test(e.key)){
-    if(!ELABEL) return;
-    ['centenas','decenas','unidades'].forEach(t=>{ qs(t).textContent = leer(t, ELABEL||'DEFAULT'); });
+    if(!LABEL) return;
+    ['centenas','decenas','unidades'].forEach(t=>{ qs(t).textContent = leer(t, LABEL||'DEFAULT'); });
   }
 });
 document.getElementById('estandar').addEventListener('dragstart', e => e.preventDefault());
