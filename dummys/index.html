@@ -36,25 +36,17 @@
     .botones-container {
       position: absolute; bottom: 100px; width: 100%;
       display: flex; justify-content: space-between; padding: 0 50px; box-sizing: border-box;
-      gap: 20px;
     }
 
     .boton {
       background: #e1dcdc; color: #333; border: none; text-align: center; cursor: pointer;
       border-radius: 12px; box-shadow: 0 6px 12px rgba(0,0,0,.3); transition: .25s ease; font-weight: bold;
       text-decoration: none; font-size: 60px; width: 400px; height: 180px; display:flex; align-items:center; justify-content:center;
-      padding: 0 20px; line-height: 1.2; user-select:none;
+      padding: 0 20px; line-height: 1.2;
     }
     .boton:hover { opacity:.9; transform: translateY(-4px); box-shadow: 0 10px 18px rgba(0,0,0,.35); }
     .boton:active { transform: translateY(0); }
     .boton.disabled { filter: grayscale(1); opacity: .55; cursor: not-allowed; box-shadow: 0 3px 8px rgba(0,0,0,.25); transform: none !important; }
-
-    /* Estilo del botón rojo de reset total */
-    .boton.danger {
-      background: #b00020; color: #fff;
-      box-shadow: 0 6px 12px rgba(176,0,32,.35);
-    }
-    .boton.danger:hover { box-shadow: 0 10px 18px rgba(176,0,32,.5); }
 
     @media (max-width: 768px) {
       .top-bar { top:30px; left:30px; right:30px; flex-direction:column; align-items:center; gap:20px; }
@@ -63,14 +55,6 @@
       .botones-container { flex-direction:column; align-items:center; bottom:50px; padding:0; gap:20px; }
       .boton { width:90%; height:120px; font-size:40px; }
     }
-
-    /* Overlay de errores */
-    #errOverlay{position:fixed;inset:0;background:rgba(0,0,0,.85);color:#fff;z-index:99999;
-      font-family:monospace;display:none;padding:16px;overflow:auto}
-    #errOverlay h3{margin:0 0 8px 0;font-size:18px}
-    #errOverlay pre{white-space:pre-wrap;word-break:break-word;font-size:14px;line-height:1.35}
-    #errOverlay .btns{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap}
-    #errOverlay button{background:#ffd54f;border:0;border-radius:6px;padding:8px 12px;font-weight:700;cursor:pointer}
   </style>
 </head>
 <body>
@@ -82,39 +66,41 @@
 
   <div class="botones-container">
     <a href="Dummys/menu-principal.html" class="boton" draggable="false">MENU<br>PRINCIPAL</a>
-
     <a id="btnPizarron" href="Dummys/pizarron.htm" class="boton disabled" draggable="false" aria-disabled="true"
        title="Carga estándares en el MENÚ para activar">PIZARRON</a>
-
-    <!-- NUEVO: Botón Reset Total -->
-    <a id="btnResetTotal" href="#" class="boton danger" draggable="false" title="Borrar datos y reiniciar la app">
-      RESET<br>TOTAL
-    </a>
-  </div>
-
-  <!-- Overlay de errores -->
-  <div id="errOverlay">
-    <h3>⚠️ Error de script</h3>
-    <pre id="errMsg"></pre>
-    <div class="btns">
-      <button id="btnClose">Cerrar</button>
-      <button id="btnClearLS">Borrar local/sessionStorage</button>
-      <button id="btnReload">Recargar</button>
-    </div>
   </div>
 
   <script>
   /*** === 0) MODO SEGURO POR URL (?safe=1) === ***/
   const SAFE_MODE = /[?&#]safe=1\b/.test(location.href);
 
-  /*** === 1) OVERLAY DE ERRORES === ***/
-  (function(){
-    const box = document.getElementById('errOverlay');
-    const pre = document.getElementById('errMsg');
-    document.getElementById('btnClose').onclick=()=>box.style.display='none';
-    document.getElementById('btnClearLS').onclick=()=>{ try{localStorage.clear();sessionStorage.clear();}catch{}; location.reload(); };
-    document.getElementById('btnReload').onclick=()=>location.reload();
-    function showError(msg){ if(pre){ pre.textContent = String(msg || 'Error desconocido'); box.style.display='block'; } }
+  /*** === 1) OVERLAY DE ERRORES (para ver pantallazo blanco) === ***/
+  (function errorOverlayInit(){
+    const css = `
+      #errOverlay{position:fixed;inset:0;background:rgba(0,0,0,.85);color:#fff;z-index:99999;
+        font-family:monospace;display:none;padding:16px;overflow:auto}
+      #errOverlay h3{margin:0 0 8px 0;font-size:18px}
+      #errOverlay pre{white-space:pre-wrap;word-break:break-word;font-size:14px;line-height:1.35}
+      #errOverlay .btns{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap}
+      #errOverlay button{background:#ffd54f;border:0;border-radius:6px;padding:8px 12px;font-weight:700;cursor:pointer}
+    `;
+    const style = document.createElement('style'); style.textContent = css; document.head.appendChild(style);
+    const box = document.createElement('div'); box.id='errOverlay';
+    box.innerHTML = `<h3>⚠️ Error de script</h3><pre id="errMsg"></pre>
+    <div class="btns">
+      <button id="btnClose">Cerrar</button>
+      <button id="btnClearLS">Borrar local/sessionStorage</button>
+      <button id="btnReload">Recargar</button>
+    </div>`;
+    document.body.appendChild(box);
+    box.querySelector('#btnClose').onclick=()=>box.style.display='none';
+    box.querySelector('#btnClearLS').onclick=()=>{ try{localStorage.clear();sessionStorage.clear();}catch{}; location.reload(); };
+    box.querySelector('#btnReload').onclick=()=>location.reload();
+
+    function showError(msg){
+      const pre = document.getElementById('errMsg');
+      if(pre){ pre.textContent = String(msg || 'Error desconocido'); box.style.display='block'; }
+    }
     window.addEventListener('error', (e)=>{ showError(`${e.message}\n\n${e.filename}:${e.lineno}:${e.colno}\n${e.error && e.error.stack ? e.error.stack : ''}`); });
     window.addEventListener('unhandledrejection', (e)=>{ showError(`Promise rejection: ${e.reason && (e.reason.stack || e.reason)}`); });
   })();
@@ -152,7 +138,7 @@
   function markLeaving(){tryLS(()=>sessionStorage.setItem(FS_FLAG,'1'));}
   function autoFSInit(){
     if (SAFE_MODE) return;
-    if (tryLS(()=>sessionStorage.getItem(FS_FLAG))==='1' || /[?#]fs=1\b/.test(location.href)) {
+    if (tryLS(()=>sessionStorage.getItem(FS_FLAG))==='1' || /[?#&]fs=1\b/.test(location.href)) {
       tryEnterFSImmediate(); tryLS(()=>sessionStorage.removeItem(FS_FLAG));
     }
     const reenter=()=>{ if(!isFS()) tryEnterFSImmediate(); };
@@ -200,7 +186,7 @@
   window.addEventListener('storage', (e)=>{ if(!e.key) return; if(e.key===BUMP_KEY || STORAGE_KEYS.includes(e.key) || e.key===CLEAN_KEY || e.key===SNAP_KEY) refrescarEstadoPizarron(); });
   setInterval(refrescarEstadoPizarron, 1500);
 
-  /*** === 6) SNAPSHOT / RESTAURAR / RESET base === ***/
+  /*** === 6) SNAPSHOT / RESTAURAR / RESET con guardias === ***/
   function makeSnapshot(){
     const payload={ keys:{}, ts: Date.now() };
     for(const k of STORAGE_KEYS){ payload.keys[k] = tryLS(()=>localStorage.getItem(k)); }
@@ -220,6 +206,21 @@
       return true;
     }catch(_){ return false; }
   }
+  function hardResetNow(){
+    tryLS(()=>localStorage.clear());
+    tryLS(()=>sessionStorage.clear());
+    tryLS(()=>localStorage.setItem(BUMP_KEY, String(Date.now())));
+    // Guardia anti-bucle: no recargar más de 1 vez en 4s
+    const GUARD='dummys_reload_guard_v1';
+    const last=tryLS(()=>sessionStorage.getItem(GUARD));
+    const now=Date.now();
+    if(!last || (now - Number(last) > 4000)){
+      tryLS(()=>sessionStorage.setItem(GUARD, String(now)));
+      location.reload();
+    } else {
+      console.warn('Reload bloqueado por guardia anti-bucle.');
+    }
+  }
   function toggleCleanMode(enable){
     tryLS(()=>localStorage.setItem(CLEAN_KEY, enable ? '1' : '0'));
     tryLS(()=>localStorage.setItem(BUMP_KEY, String(Date.now())));
@@ -228,18 +229,19 @@
   // Snapshot al salir (lo último usado)
   window.addEventListener('beforeunload', ()=>{ if(!SAFE_MODE) makeSnapshot(); });
 
-  // Helpers por QS
+  // Querystring helpers: ?reset=1|restore=1|clean=1|noclean=1
   (function handleQS(){
     if(SAFE_MODE) return;
     try{
       const url=new URL(location.href);
+      if(url.searchParams.get('reset')==='1'){ hardResetNow(); return; }
       if(url.searchParams.get('restore')==='1'){ if(applySnapshot()) location.reload(); }
       if(url.searchParams.get('clean')==='1'){ toggleCleanMode(true); }
       if(url.searchParams.get('noclean')==='1'){ toggleCleanMode(false); }
     }catch(_){}
   })();
 
-  // Limpiar al iniciar si está activado (guardia anti-bucle)
+  // Limpiar al iniciar si está activado, con guardia anti-bucle
   (function cleanOnBootIfNeeded(){
     if(SAFE_MODE) return;
     try{
@@ -257,89 +259,7 @@
     }catch(_){}
   })();
 
-  /*** === 7) BORRADO PROFUNDO + RESET TOTAL === ***/
-  const DUMMYS_KEYS = [
-    'dummys_rel_paths_master_v2','dummys_rel_paths_v4','dummys_rel_paths_v3',
-    'dummys_rel_paths_v2','dummys_rel_paths',
-    'dummys_clean_mode_v1','dummys_snapshot_v1','dummys_catalog_bump',
-    'dummys_cursor_visible'
-  ];
-
-  async function deepClearWebData() {
-    try { window.__DUMMYS_NUKE__ = true; } catch(_) {}
-
-    try { for (const k of DUMMYS_KEYS) localStorage.removeItem(k); localStorage.clear(); } catch(_) {}
-    try { sessionStorage.clear(); } catch(_) {}
-
-    try {
-      if (indexedDB.databases) {
-        const dbs = await indexedDB.databases();
-        if (Array.isArray(dbs)) {
-          await Promise.allSettled(
-            dbs.map(db => { try { return indexedDB.deleteDatabase(db.name); } catch(_) {} })
-          );
-        }
-      } else {
-        // Si usas nombres fijos de DB, ponlos aquí:
-        // indexedDB.deleteDatabase('dummys-db');
-      }
-    } catch(_) {}
-
-    try {
-      if (self.caches && caches.keys) {
-        const names = await caches.keys();
-        await Promise.allSettled(names.map(n => caches.delete(n)));
-      }
-    } catch(_) {}
-
-    try {
-      if (navigator.serviceWorker) {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        await Promise.allSettled(regs.map(r => r.unregister()));
-      }
-    } catch(_) {}
-
-    try { sessionStorage.setItem('dummys_boot_clean_done_v1','1'); } catch(_) {}
-  }
-
-  async function hardResetNow() {
-    if (window.__DUMMYS_RESET_RUNNING__) return;
-    window.__DUMMYS_RESET_RUNNING__ = true;
-
-    await deepClearWebData();
-
-    try { localStorage.setItem('dummys_catalog_bump', String(Date.now())); } catch(_) {}
-
-    const url = new URL(location.href);
-    url.searchParams.set('_nuke', Date.now().toString());
-    url.searchParams.delete('restore');
-    url.searchParams.delete('reset');
-    url.searchParams.delete('clean');
-    url.searchParams.delete('noclean');
-    url.searchParams.delete('safe');
-
-    // Guardia anti-bucle: no recargar más de 1 vez en 4s
-    const GUARD='dummys_reload_guard_v1';
-    const last=tryLS(()=>sessionStorage.getItem(GUARD));
-    const now=Date.now();
-    if(!last || (now - Number(last) > 4000)){
-      tryLS(()=>sessionStorage.setItem(GUARD, String(now)));
-      location.replace(url.toString());
-    } else {
-      console.warn('Reload bloqueado por guardia anti-bucle.');
-    }
-  }
-
-  (function handleNukeQS(){
-    try {
-      const u = new URL(location.href);
-      if (u.searchParams.get('nuke') === '1') {
-        hardResetNow();
-      }
-    } catch(_) {}
-  })();
-
-  /*** === 8) Atajos === ***/
+  // Atajos: Shift+Alt+X reset, Shift+Alt+R restore, Shift+Alt+L toggle clean
   window.addEventListener('keydown', (e)=>{
     if(!(e.shiftKey && e.altKey)) return;
     const k=e.key.toLowerCase();
@@ -353,7 +273,7 @@
     }
   });
 
-  /*** === 9) Bloqueos básicos === ***/
+  /*** === 7) Bloqueos básicos === ***/
   document.addEventListener('contextmenu', e=>e.preventDefault());
   document.addEventListener('selectstart', e=>e.preventDefault());
   document.addEventListener('dragstart',  e=>e.preventDefault());
@@ -361,18 +281,6 @@
     if ((e.ctrlKey||e.metaKey) && (['+','-','=','0'].includes(e.key))) e.preventDefault();
     if (['F11'].includes(e.key)) e.preventDefault();
   });
-
-  /*** === 10) LÓGICA DEL BOTÓN RESET TOTAL === ***/
-  const btnReset = document.getElementById('btnResetTotal');
-  if(btnReset){
-    btnReset.addEventListener('click', async (e)=>{
-      e.preventDefault();
-      const ok = confirm('¿Borrar TODO (LS/SS/IndexedDB/Caches/SW) y reiniciar la app?');
-      if(!ok) return;
-      if(navigator.vibrate) navigator.vibrate(40);
-      await hardResetNow();
-    }, {passive:false});
-  }
   </script>
 </body>
 </html>

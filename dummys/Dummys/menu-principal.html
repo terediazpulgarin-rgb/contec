@@ -158,11 +158,24 @@
           STORAGE_KEY='dummys_rel_paths_master_v2',
           LINEA_KEY='dummys_linea_actual_v10',
           MODE_KEY='dummys_modo_vista_v8',
-          CLEAN_KEY='dummys_clean_mode_v1';   // <<<<<< MODO LIMPIO PERSISTENTE
+          CLEAN_KEY='dummys_clean_mode_v1';   // MODO LIMPIO PERSISTENTE
 
     const STD_PAGE='ESTANDAR.html';
     const $=(id)=>document.getElementById(id);
     let modoVista=readMode()||'D', lineaActual=readLinea()||'';
+
+    /* ==== Candado anti-rehidratación: si CLEAN está activo, bloquear escrituras salvo la bandera ==== */
+    (function gateCleanMode(){
+      try{
+        if(localStorage.getItem(CLEAN_KEY)==='1'){
+          const _set = localStorage.setItem.bind(localStorage);
+          localStorage.setItem = function(k,v){
+            if(k!==CLEAN_KEY) return;  // bloquear todo salvo la bandera
+            return _set(k,v);
+          };
+        }
+      }catch(_){}
+    })();
 
     /* ===== Utilidades ===== */
     function normalizeRelPath(p){
@@ -171,8 +184,6 @@
       if(/^dummys\//i.test(s)) s=s.replace(/^dummys\//i,'');
       return s.replace(/\/{2,}/g,'/');
     }
-    function getPathSegments(rel){const p=normalizeRelPath(rel), parts=p.split('/'); if(parts.length<=1) return []; parts.pop(); return parts;}
-
     const COLOR_MAP={
       'rosa':'#e91e63','naranja':'#ff9800','azul':'#2196f3','rojo':'#f44336','verde':'#4caf50','amarillo':'#ffeb3b',
       'morado':'#9c27b0','violeta':'#7e57c2','cafe':'#795548','café':'#795548','gris':'#9e9e9e','negro':'#212121',
@@ -182,9 +193,7 @@
       'aqua':'#00ffff','teal':'#008080','beige':'#f5f5dc','oliva':'#808000','olive':'#808000',
       'salmon':'#fa8072','salmón':'#fa8072'
     };
-
     function deaccent(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
-
     function contrastText(hex){
       let c=(hex||'').replace('#','').trim();
       if(c.length===3) c=c.split('').map(x=>x+x).join('');
@@ -193,7 +202,6 @@
       const yiq=(r*299+g*587+b*114)/1000;
       return (yiq>=140)?'#000':'#fff';
     }
-
     function naturalCompare(a,b){
       const an=String(a).toUpperCase(),bn=String(b).toUpperCase();const rx=/(\d+)|(\D+)/g;
       const aa=an.match(rx)||[],bb=bn.match(rx)||[];
@@ -203,12 +211,9 @@
       }
       return an.localeCompare(bn);
     }
-
     function canonLinea(s){ return String(s||'').trim().toUpperCase(); }
-
     function readStored(){
       try{
-        // Si está en modo limpio, devolver vacío SIEMPRE
         if(localStorage.getItem(CLEAN_KEY)==='1') return [];
         const arr=JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]')||[];
         return Array.from(new Set(arr.map(normalizeRelPath)));
@@ -218,35 +223,17 @@
     function readLinea(){try{return canonLinea(localStorage.getItem(LINEA_KEY)||'')}catch{return''}}
     function saveMode(v){try{localStorage.setItem(MODE_KEY,v)}catch{}}
     function readMode(){try{return localStorage.getItem(MODE_KEY)}catch{return null}}
-
-    function isStdHtml(file){const n=(file?.name||'').toLowerCase();return /\.html?$/.test(n);}
-    function isStdImage(file){const n=(file?.name||'').toLowerCase();return /\.(jpe?g|png)$/i.test(n);}
     function isRelImagePath(rel){return /\.(jpe?g|png)$/i.test(String(rel).toLowerCase());}
-
     function parseIdLineFromName(S){
       S=String(S||'').toUpperCase().replace(/\.(HTML?|HTM|JPE?G|PNG)$/,'').trim();
-
       let m=S.match(/\bR(\d+)\s*[-_–—]\s*(AVI|POLI)\b/);
-      if(m){
-        const rnum=m[1], suffix=m[2];
-        const linea=canonLinea(suffix);
-        return {idFull:`R${rnum}-${suffix}`, idKey:`R${rnum}`, linea};
-      }
-
+      if(m){ const rnum=m[1], suffix=m[2]; const linea=canonLinea(suffix); return {idFull:`R${rnum}-${suffix}`, idKey:`R${rnum}`, linea}; }
       m=S.match(/\bD([0-9O]{3,4})([A-Z]*)\s*[-_–—]\s*([A-Z0-9]+)\b/);
-      if(m){
-        const num=m[1].replace(/O/g,'0'), suf=m[2]||'', lin=canonLinea(m[3]);
-        return {idFull:'D'+num+suf, idKey:'D'+num, linea:lin};
-      }
-
+      if(m){ const num=m[1].replace(/O/g,'0'), suf=m[2]||'', lin=canonLinea(m[3]); return {idFull:'D'+num+suf, idKey:'D'+num, linea:lin}; }
       m=S.match(/\bD([0-9O]{3,4})([A-Z]*)\b/);
-      if(m){
-        const num=m[1].replace(/O/g,'0'), suf=m[2]||'';
-        return {idFull:'D'+num+suf, idKey:'D'+num, linea:''};
-      }
+      if(m){ const num=m[1].replace(/O/g,'0'), suf=m[2]||''; return {idFull:'D'+num+suf, idKey:'D'+num, linea:''}; }
       return{idFull:'',idKey:'',linea:''};
     }
-
     function getPathColor(rel){
       const parts=normalizeRelPath(rel).split('/');parts.pop();
       for(let i=parts.length-1;i>=0;i--){
@@ -258,52 +245,20 @@
       }
       return null;
     }
-
-    /* ==== no usar idKey como candidato de imagen ==== */
-    function buildNameCandidates(label,linea){
-      const L=String(label||'').toUpperCase();
-      const LN=String(linea||'').toUpperCase();
-      const outs=[];
-      if(!L) return outs;
-      if(LN){
-        outs.push(`${L}-${LN}.jpg`,`${L}-${LN}.jpeg`,`${L}-${LN}.png`);
-      }
-      outs.push(`${L}.jpg`,`${L}.jpeg`,`${L}.png`);
-      return outs;
-    }
-
-    function storeImageHint(label,linea,list){
-      const cand=buildNameCandidates(label,linea).map(s=>s.toUpperCase());
-      for(const rel of (list||[])){
-        if(!isRelImagePath(rel))continue;
-        const base=(rel.split('/').pop()||'').toUpperCase();
-        if(cand.includes(base)){
-          try{ localStorage.setItem(`dummys_img_for_${String(label).toUpperCase()}__${String(linea||'').toUpperCase()}`, rel); }catch(e){}
-          return;
-        }
-      }
-    }
-
     function buildLineIndex(list){
-      const byRelLine=new Map();
-      const byLine=new Map();
-      const lineColorCounts=new Map();
-      const modelColorCache=new Map();
-
+      const byRelLine=new Map(), byLine=new Map(), lineColorCounts=new Map(), modelColorCache=new Map();
       for (const relRaw of list){
         const rel = normalizeRelPath(relRaw);
         const base=(rel.split('/').pop()||'');
         const nameU=base.toUpperCase();
         const {idFull,linea}=parseIdLineFromName(nameU);
         if(!idFull) continue;
-
         const ln = canonLinea(linea || '');
         if(ln){
           byRelLine.set(rel, ln);
           if(!byLine.has(ln)) byLine.set(ln,new Set());
           byLine.get(ln).add(rel);
         }
-
         if(!modelColorCache.has(idFull)){
           let hex = getPathColor(rel);
           if(!hex){
@@ -313,7 +268,6 @@
           if(!hex) hex = '#ffeb3b';
           modelColorCache.set(idFull, hex);
         }
-
         if(ln){
           if(!lineColorCounts.has(ln)) lineColorCounts.set(ln, new Map());
           const cmap = lineColorCounts.get(ln);
@@ -321,7 +275,6 @@
           cmap.set(hex, (cmap.get(hex)||0)+1);
         }
       }
-
       const lineColors=new Map();
       for(const [ln,cmap] of lineColorCounts.entries()){
         let bestHex=null,best=-1;
@@ -330,16 +283,11 @@
       }
       return {byRelLine,byLine,lineColors, modelColorCache};
     }
-
     function buildModelsFromList(list,scopeLine){
       const map=new Map();
       const {byRelLine, modelColorCache}=buildLineIndex(list);
       const scope = canonLinea(scopeLine || '');
-
-      const pool = scope
-        ? list.filter(rel => canonLinea(byRelLine.get(normalizeRelPath(rel))||'') === scope)
-        : list.slice();
-
+      const pool = scope ? list.filter(rel => canonLinea(byRelLine.get(normalizeRelPath(rel))||'') === scope) : list.slice();
       for(const relRaw of pool){
         const rel=normalizeRelPath(relRaw);
         const base=(rel.split('/').pop()||'');
@@ -350,23 +298,32 @@
         const hex = modelColorCache.get(p.idFull) || getPathColor(rel);
         if(hex && !map.get(p.idFull).bg) map.get(p.idFull).bg = hex;
       }
-
       for(const m of map.values()){
         const saved=localStorage.getItem(`dummys_color_for_${m.label}`);
         if(saved && /^#[0-9a-f]{3,6}$/i.test(saved)) m.bg=saved;
         if(!m.bg) m.bg='#ffeb3b';
       }
-
       const arr=[...map.values()];
       arr.sort((a,b)=>naturalCompare(a.label,b.label));
       return arr;
     }
-
+    function hasAnyStd(list){
+      return (list || []).some(rel => {
+        const base = (normalizeRelPath(rel).split('/').pop() || '')
+                      .toUpperCase()
+                      .replace(/\.(HTML?|HTM|JPE?G|PNG)$/, '');
+        return /^D[0-9O]{3,4}[A-Z]*\b/.test(base) || /\bR\d+\s*[-_–—]\s*(AVI|POLI)\b/.test(base);
+      });
+    }
+    function updatePizarronEnabled(list){
+      const a=$('link-pizarron'),hint=$('pizarron-hint');const ok=hasAnyStd(list);
+      if(ok){a.classList.remove('pizarron-disabled');a.setAttribute('href','pizarron.htm');a.removeAttribute('aria-disabled');hint.style.display='none';}
+      else{a.classList.add('pizarron-disabled');a.setAttribute('href','#');a.setAttribute('aria-disabled','true');hint.style.display='block';}
+    }
     function render(list){
       const cont=$('lista-dummys'),estado=$('estado');cont.innerHTML='';
       updatePizarronEnabled(list);
       if(!list.length){if(estado)estado.textContent='No hay archivos cargados. Usa "CONFIGURACIÓN".';return;}
-
       const {byRelLine,byLine,lineColors}=buildLineIndex(list);
       const lineasDisponibles=Array.from(byLine.keys()).sort(naturalCompare);
 
@@ -420,65 +377,29 @@
       });
     }
 
-    function hasAnyStd(list){
-      return (list || []).some(rel => {
-        const base = (normalizeRelPath(rel).split('/').pop() || '')
-                      .toUpperCase()
-                      .replace(/\.(HTML?|HTM|JPE?G|PNG)$/, '');
-        return /^D[0-9O]{3,4}[A-Z]*\b/.test(base) || /\bR\d+\s*[-_–—]\s*(AVI|POLI)\b/.test(base);
-      });
+    function buildNameCandidates(label,linea){
+      const L=String(label||'').toUpperCase();
+      const LN=String(linea||'').toUpperCase();
+      const outs=[]; if(!L) return outs;
+      if(LN){ outs.push(`${L}-${LN}.jpg`,`${L}-${LN}.jpeg`,`${L}-${LN}.png`); }
+      outs.push(`${L}.jpg`,`${L}.jpeg`,`${L}.png`);
+      return outs;
     }
-    function updatePizarronEnabled(list){
-      const a=$('link-pizarron'),hint=$('pizarron-hint');const ok=hasAnyStd(list);
-      if(ok){a.classList.remove('pizarron-disabled');a.setAttribute('href','pizarron.htm');a.removeAttribute('aria-disabled');hint.style.display='none';}
-      else{a.classList.add('pizarron-disabled');a.setAttribute('href','#');a.setAttribute('aria-disabled','true');hint.style.display='block';}
+    function storeImageHint(label,linea,list){
+      const cand=buildNameCandidates(label,linea).map(s=>s.toUpperCase());
+      for(const rel of (list||[])){
+        if(!isRelImagePath(rel))continue;
+        const base=(rel.split('/').pop()||'').toUpperCase();
+        if(cand.includes(base)){
+          try{ localStorage.setItem(`dummys_img_for_${String(label).toUpperCase()}__${String(linea||'').toUpperCase()}`, rel); }catch(e){}
+          return;
+        }
+      }
     }
 
     function bumpCatalog(){try{localStorage.setItem('dummys_catalog_bump',String(Date.now()));}catch(e){}}
 
-    /* ==== BOTÓN BORRAR: limpieza manual que persiste hasta que cargues de nuevo ==== */
-    $('btn-borrar').addEventListener('click', async () => {
-      if (!confirm('Se borrarán TODOS los datos locales (tus archivos NO se borran). ¿Continuar?')) return;
-
-      // 0) Poner el modo limpio ANTES de tocar nada
-      try { localStorage.setItem(CLEAN_KEY, '1'); } catch {}
-
-      // 1) Borrar claves salvo el flag de modo limpio
-      try {
-        const toDelete = [];
-        for (let i=0;i<localStorage.length;i++){
-          const k = localStorage.key(i);
-          if (!k) continue;
-          if (k === CLEAN_KEY) continue; // conservamos el flag
-          toDelete.push(k);
-        }
-        toDelete.forEach(k => localStorage.removeItem(k));
-        // Forzamos STORAGE_KEY vacío (por seguridad)
-        localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
-      } catch {}
-
-      // 2) sessionStorage
-      try { sessionStorage.clear(); } catch {}
-
-      // 3) Cache Storage + Service Workers (mismo origen)
-      if ('caches' in window) {
-        try { const keys = await caches.keys(); await Promise.all(keys.map(k => caches.delete(k))); } catch {}
-      }
-      if ('serviceWorker' in navigator) {
-        try { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map(r => r.unregister())); } catch {}
-      }
-
-      // 4) Reset UI
-      bumpCatalog();
-      render([]);
-      const estado = $('estado');
-      if (estado) estado.textContent = 'Datos borrados. (Modo limpio activo) Usa CONFIGURACIÓN para cargar.';
-      $('dirInput').value = '';
-      lineaActual = '';
-      saveLinea('');
-    });
-
-    /* ==== Selección de carpeta: REEMPLAZA lo anterior y desactiva modo limpio ==== */
+    /* ==== SELECCIÓN DE CARPETA ==== */
     function handleFileList(fileList){
       const files = Array.from(fileList || []);
       let rels = [], ignorados = 0;
@@ -495,12 +416,12 @@
       rels = Array.from(new Set(rels));
 
       try {
-        // Desactivar modo limpio al cargar algo nuevo
+        // Al cargar algo, desactivar modo limpio
         localStorage.setItem(CLEAN_KEY, '0');
         localStorage.setItem(STORAGE_KEY, JSON.stringify(rels));
       } catch {}
 
-      // Limpiar hints/colores que no apliquen a la nueva selección
+      // Limpiar hints/colores antiguos que ya no apliquen
       try {
         const keepLabels = new Set();
         const keepLineasByLabel = new Map();
@@ -623,7 +544,6 @@
     btnConfig.addEventListener('click', openLock);
     btnCancelar.addEventListener('click', closeLock);
     btnLimpiar.addEventListener('click', ()=>{ pin=[]; drawScreen(); });
-
     keys.forEach(k=>{
       k.addEventListener('click', ()=>{
         const v=k.textContent.trim();
@@ -639,20 +559,88 @@
     /* ===== Cursor persistente con C+R ===== */
     const CURSOR_KEY = "dummys_cursor_visible";
     function applyCursorState(visible){
-      if(visible){
-        document.body.classList.remove("no-cursor");
-      } else {
-        document.body.classList.add("no-cursor");
-      }
-      try{
-        localStorage.setItem(CURSOR_KEY, visible ? "1" : "0");
-      }catch(e){}
+      if(visible){ document.body.classList.remove("no-cursor"); }
+      else{ document.body.classList.add("no-cursor"); }
+      try{ localStorage.setItem(CURSOR_KEY, visible ? "1" : "0"); }catch(e){}
     }
 
+    /* ===================== RESET TOTAL (BORRAR DATOS) ===================== */
+    const DUMMYS_KEYS = [
+      'dummys_rel_paths_master_v2','dummys_rel_paths_v4','dummys_rel_paths_v3',
+      'dummys_rel_paths_v2','dummys_rel_paths',
+      'dummys_clean_mode_v1','dummys_snapshot_v1','dummys_catalog_bump',
+      'dummys_cursor_visible'
+    ];
+    const BUMP_KEY  = 'dummys_catalog_bump';
+
+    async function deepClearWebData() {
+      try { window.__DUMMYS_NUKE__ = true; } catch(_){}
+
+      // 1) Local/Session Storage
+      try { for (const k of DUMMYS_KEYS) localStorage.removeItem(k); localStorage.clear(); } catch(_){}
+      try { sessionStorage.clear(); } catch(_){}
+
+      // 2) IndexedDB
+      try {
+        if (indexedDB.databases) {
+          const dbs = await indexedDB.databases();
+          if (Array.isArray(dbs)) {
+            await Promise.allSettled(dbs.map(db => { try { return indexedDB.deleteDatabase(db.name); } catch(_) {} }));
+          }
+        } else {
+          // indexedDB.deleteDatabase('dummys-db'); // añade nombres fijos si los tienes
+        }
+      } catch(_){}
+
+      // 3) Cache Storage
+      try {
+        if (self.caches && caches.keys) {
+          const names = await caches.keys();
+          await Promise.allSettled(names.map(n => caches.delete(n)));
+        }
+      } catch(_){}
+
+      // 4) Service Workers
+      try {
+        if (navigator.serviceWorker) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.allSettled(regs.map(r => r.unregister()));
+        }
+      } catch(_){}
+
+      // 5) Guard para evitar bucles
+      try { sessionStorage.setItem('dummys_boot_clean_done_v1','1'); } catch(_){}
+    }
+
+    async function hardResetNow() {
+      if (window.__DUMMYS_RESET_RUNNING__) return;
+      window.__DUMMYS_RESET_RUNNING__ = true;
+
+      // Activa modo limpio antes para bloquear escrituras accidentales
+      try { localStorage.setItem(CLEAN_KEY, '1'); } catch {}
+
+      await deepClearWebData();
+
+      try { localStorage.setItem(BUMP_KEY, String(Date.now())); } catch(_){}
+
+      const url = new URL(location.href);
+      url.searchParams.set('_nuke', Date.now().toString());
+      for (const k of ['restore','reset','clean','noclean','safe']) url.searchParams.delete(k);
+      location.replace(url.toString());
+    }
+
+    // El botón BORRAR DATOS hace RESET TOTAL
+    document.getElementById('btn-borrar').addEventListener('click', async () => {
+      if (!confirm('Se borrará TODO (LS/SS/IndexedDB/Cache/SW) y se reiniciará la app. ¿Continuar?')) return;
+      if (navigator.vibrate) navigator.vibrate(40);
+      await hardResetNow();
+    });
+
+    /* ====== INIT ====== */
     document.addEventListener("DOMContentLoaded", ()=>{
       _armFullscreenPersistence();
 
-      // Si el modo limpio está activo, garantizamos estado vacío
+      // Si el modo limpio está activo, garantir estado vacío visual
       try{
         if(localStorage.getItem(CLEAN_KEY)==='1'){
           localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
@@ -666,19 +654,8 @@
       updatePizarronEnabled(list);
       document.getElementById('config-panel').style.maxHeight='0';
 
-      try{
-        if (sessionStorage.getItem('dummys_open_config') === '1'){
-          sessionStorage.removeItem('dummys_open_config');
-          openLock();
-        }
-      }catch(e){}
-
       const saved = localStorage.getItem(CURSOR_KEY);
-      if(saved === null){
-        applyCursorState(false);
-      } else {
-        applyCursorState(saved === "1");
-      }
+      if(saved === null){ applyCursorState(false); } else { applyCursorState(saved === "1"); }
     });
 
     window.addEventListener('storage',(e)=>{
@@ -689,6 +666,7 @@
       }
     });
 
+    // Atajo C+R alterna cursor
     const pressedKeys = new Set();
     window.addEventListener("keydown", (e)=>{
       pressedKeys.add(e.key.toLowerCase());
@@ -697,8 +675,13 @@
         applyCursorState(!isVisible);
       }
     });
-    window.addEventListener("keyup", (e)=>{
-      pressedKeys.delete(e.key.toLowerCase());
+    window.addEventListener("keyup", (e)=>{ pressedKeys.delete(e.key.toLowerCase()); });
+
+    // Atajos extra (opcionales): Shift+Alt+X reset
+    window.addEventListener('keydown', (e)=>{
+      if(!(e.shiftKey && e.altKey)) return;
+      const k=e.key.toLowerCase();
+      if(k==='x'){ e.preventDefault(); hardResetNow(); }
     });
   </script>
 </body>
