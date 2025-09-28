@@ -360,7 +360,7 @@
     function render(list){
       const cont=$('lista-dummys'),estado=$('estado');cont.innerHTML='';
       updatePizarronEnabled(list);
-      if(!list.length){if(estado)estado.textContent='No hay archivos cargados. Usa “CONFIGURACIÓN”.';return;}
+      if(!list.length){if(estado)estado.textContent='No hay archivos cargados. Usa "CONFIGURACIÓN".';return;}
 
       const {byRelLine,byLine,lineColors}=buildLineIndex(list);
       const lineasDisponibles=Array.from(byLine.keys()).sort(naturalCompare);
@@ -456,35 +456,63 @@
       if(estado)estado.textContent='Procesando carpeta…';
       handleFileList($('dirInput').files);
     });
+    
+    /* ==== BOTÓN BORRAR MODIFICADO PARA RASPBERRY ==== */
     $('btn-borrar').addEventListener('click',()=>{
       if(!confirm('Se borrarán TODOS los datos guardados (tus archivos NO se borran). ¿Continuar?')) return;
       try{
-        // Opción 1: limpiar TODO el localStorage
+        // Método universal que funciona en Windows y Raspberry
         localStorage.clear();
-
-        // --- Opción 2 (más segura): eliminar solo lo que usa tu app ---
-        /*
-        localStorage.removeItem(STORAGE_KEY);
-        localStorage.removeItem(LINEA_KEY);
-        localStorage.removeItem(MODE_KEY);
-        localStorage.removeItem('dummys_last_color');
-        // Y también limpiar todos los hints de imágenes / colores guardados
-        for (let k in localStorage) {
-          if (k.startsWith("dummys_color_for_") || k.startsWith("dummys_img_for_")) {
-            localStorage.removeItem(k);
+        
+        // Limpieza adicional para asegurar en todos los sistemas
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.startsWith('dummys_') || 
+                      key === STORAGE_KEY || 
+                      key === LINEA_KEY || 
+                      key === MODE_KEY)) {
+            keysToRemove.push(key);
           }
         }
-        */
-      }catch(e){}
+        
+        keysToRemove.forEach(key => {
+          localStorage.removeItem(key);
+        });
+        
+      }catch(e){
+        console.error('Error al borrar datos:', e);
+        // Fallback: intentar borrar items específicos
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem(LINEA_KEY);
+          localStorage.removeItem(MODE_KEY);
+          localStorage.removeItem('dummys_last_color');
+          localStorage.removeItem('dummys_catalog_bump');
+          localStorage.removeItem('dummys_cursor_visible');
+          
+          // Limpiar hints de imágenes y colores
+          for (let k in localStorage) {
+            if (k.startsWith("dummys_color_for_") || k.startsWith("dummys_img_for_")) {
+              localStorage.removeItem(k);
+            }
+          }
+        } catch(fallbackError) {
+          console.error('Error en fallback:', fallbackError);
+        }
+      }
+      
+      // También limpiar sessionStorage
+      try { sessionStorage.clear(); } catch(e) {}
+      
       bumpCatalog();
       render([]);
       const estado=$('estado');
-      if(estado) estado.textContent='Datos borrados. Usa CONFIGURACIÓN.';
+      if(estado) estado.textContent='Datos borrados correctamente. Usa CONFIGURACIÓN.';
       $('dirInput').value='';
       lineaActual='';
       saveLinea('');
     });
-
 
     $('btn-buscar-linea').addEventListener('click',()=>{const list=readStored();modoVista='LINEAS';saveMode(modoVista);render(list);});
     $('btn-ver-todo').addEventListener('click',()=>{const list=readStored();lineaActual='';saveLinea(lineaActual);modoVista='D';saveMode(modoVista);render(list);});
