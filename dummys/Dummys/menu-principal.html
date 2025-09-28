@@ -9,9 +9,7 @@
     body*,html{cursor:none!important}
 
     /* Clase dinámica para ocultar cursor */
-    .no-cursor, .no-cursor * {
-      cursor: none !important;
-    }
+    .no-cursor, .no-cursor * { cursor: none !important; }
 
     .contenido-principal{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative}
     .fondo-botones{position:absolute;background-color:rgba(222,222,222,.85);border-radius:15px;padding:20px;width:90%;max-width:900px;min-height:75vh;height:auto;margin-top:40px;border:2px solid rgba(0,0,0,.1);box-shadow:0 0 20px rgba(0,0,0,.2);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;overflow-y:auto;z-index:1}
@@ -42,7 +40,7 @@
       font-size:25px;margin:5px;padding:10px 8px;transition:.3s;border-radius:5px;
       width:auto;min-width:120px;max-width:100%;
       height:auto;min-height:60px;
-      box-sizing:border-box;box-shadow:0 4px 8px rgba(0,0,0,.2);background:#eaeaea;user-select:none;position:relative;
+      box-sizing:border-box;box-shadow:0 0 20px rgba(0,0,0,.2);background:#eaeaea;user-select:none;position:relative;
       white-space:normal;word-break:break-word;overflow:visible;text-overflow:clip
     }
     .botontexto:hover{transform:scale(1.05);box-shadow:0 6px 12px rgba(0,0,0,.3)}
@@ -125,8 +123,6 @@
           <input id="dirInput" type="file" multiple webkitdirectory />
         </label>
         <button class="btn-texto btn-rojo" id="btn-borrar" type="button"><strong>BORRAR DATOS</strong></button>
-
-        
       </div>
     </div>
   </div>
@@ -251,7 +247,7 @@
       return null;
     }
 
-    /* ==== corregido: no usar idKey como candidato de imagen ==== */
+    /* ==== no usar idKey como candidato de imagen ==== */
     function buildNameCandidates(label,linea){
       const L=String(label||'').toUpperCase();
       const LN=String(linea||'').toUpperCase();
@@ -264,7 +260,6 @@
       return outs;
     }
 
-    /* ==== corregido: storeImageHint ya no usa idKey ==== */
     function storeImageHint(label,linea,list){
       const cand=buildNameCandidates(label,linea).map(s=>s.toUpperCase());
       for(const rel of (list||[])){
@@ -287,7 +282,7 @@
         const rel = normalizeRelPath(relRaw);
         const base=(rel.split('/').pop()||'');
         const nameU=base.toUpperCase();
-        const {idFull,idKey,linea}=parseIdLineFromName(nameU);
+        const {idFull,linea}=parseIdLineFromName(nameU);
         if(!idFull) continue;
 
         const ln = canonLinea(linea || '');
@@ -300,7 +295,6 @@
         if(!modelColorCache.has(idFull)){
           let hex = getPathColor(rel);
           if(!hex){
-            /* ==== corregido: sólo leer color por idFull ==== */
             const saved = localStorage.getItem(`dummys_color_for_${idFull}`);
             if(saved && /^#[0-9a-f]{3,6}$/i.test(saved)) hex = saved;
           }
@@ -346,7 +340,6 @@
       }
 
       for(const m of map.values()){
-        /* ==== corregido: sólo color guardado por label (idFull) ==== */
         const saved=localStorage.getItem(`dummys_color_for_${m.label}`);
         if(saved && /^#[0-9a-f]{3,6}$/i.test(saved)) m.bg=saved;
         if(!m.bg) m.bg='#ffeb3b';
@@ -395,21 +388,19 @@
         btn.addEventListener('click',()=>{
           try{
             if(m.bg){
-              /* ==== corregido: guardar sólo por label (idFull) ==== */
               localStorage.setItem(`dummys_color_for_${String(m.label).toUpperCase()}`,m.bg);
               localStorage.setItem('dummys_last_color',m.bg);
             }
           }catch(e){}
+          const {byRelLine}=buildLineIndex(list);
           const searchPool=lineaActual?list.filter(rel=>canonLinea((byRelLine.get(normalizeRelPath(rel))||''))===canonLinea(lineaActual)):list;
 
-          /* ==== corregido: storeImageHint(label, linea, list) ==== */
           storeImageHint(m.label,(m.linea||lineaActual||'').toUpperCase(),searchPool);
 
           const lineaSel=(m.linea||lineaActual||'').toUpperCase();
           const parts=[m.label];
           if(lineaSel) parts.push(encodeURIComponent(lineaSel));
           if(m.bg)     parts.push(encodeURIComponent(m.bg));
-          // Marcar intención de mantener FS antes de navegar
           try { sessionStorage.setItem('dummys_fs_wanted','1'); } catch(e) {}
           location.href=`${STD_PAGE}#${parts.join(',')}`;
         });
@@ -431,105 +422,162 @@
       else{a.classList.add('pizarron-disabled');a.setAttribute('href','#');a.setAttribute('aria-disabled','true');hint.style.display='block';}
     }
 
-    function mergeUnique(a,b){return Array.from(new Set([...(a||[]),...(b||[])]));}
+    function bumpCatalog(){try{localStorage.setItem('dummys_catalog_bump',String(Date.now()));}catch(e){}}
+
+    /* ==== BOTÓN BORRAR: limpieza manual (persiste hasta que tú borres) ==== */
+    $('btn-borrar').addEventListener('click', async () => {
+      if (!confirm('Se borrarán TODOS los datos locales (tus archivos NO se borran). ¿Continuar?')) return;
+
+      // 1) Storages
+      try { localStorage.clear(); } catch {}
+      try { sessionStorage.clear(); } catch {}
+
+      // 2) Por si quedan claves sueltas
+      try {
+        const STORAGE_KEY='dummys_rel_paths_master_v2';
+        const LINEA_KEY  ='dummys_linea_actual_v10';
+        const MODE_KEY   ='dummys_modo_vista_v8';
+        const extras = [];
+        for (let i=0;i<localStorage.length;i++){
+          const k = localStorage.key(i);
+          if (!k) continue;
+          if (k.startsWith('dummys_') || k===STORAGE_KEY || k===LINEA_KEY || k===MODE_KEY) extras.push(k);
+        }
+        extras.forEach(k => localStorage.removeItem(k));
+      } catch {}
+
+      // 3) Cache Storage + Service Workers (mismo origen)
+      if ('caches' in window) {
+        try { const keys = await caches.keys(); await Promise.all(keys.map(k => caches.delete(k))); } catch {}
+      }
+      if ('serviceWorker' in navigator) {
+        try { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map(r => r.unregister())); } catch {}
+      }
+
+      // 4) Reset UI
+      try { localStorage.setItem('dummys_catalog_bump', String(Date.now())); } catch {}
+      render([]);
+      const estado = $('estado');
+      if (estado) estado.textContent = 'Datos borrados correctamente. Usa CONFIGURACIÓN.';
+      $('dirInput').value = '';
+      lineaActual = '';
+      saveLinea('');
+    });
+
+    /* ==== Selección de carpeta: REEMPLAZA lo anterior y limpia hints viejos ==== */
     function handleFileList(fileList){
-      const files=Array.from(fileList||[]);let rels=[],ignorados=0;
-      files.forEach(file=>{
-        const ok=(/\.html?$/i.test(file.name))||(/\.(jpe?g|png)$/i.test(file.name));
-        if(!ok){ignorados++;return;}
-        const relRaw=file.webkitRelativePath||file.name;
-        const rel=normalizeRelPath(relRaw);
-        if(!rel){ignorados++;return;}
+      const files = Array.from(fileList || []);
+      let rels = [], ignorados = 0;
+
+      files.forEach(file => {
+        const ok = (/\.html?$/i.test(file.name)) || (/\.(jpe?g|png)$/i.test(file.name));
+        if (!ok){ ignorados++; return; }
+        const relRaw = file.webkitRelativePath || file.name;
+        const rel = normalizeRelPath(relRaw);
+        if (!rel){ ignorados++; return; }
         rels.push(rel);
       });
-      rels=Array.from(new Set(rels));
-      const stored=readStored();
-      const merged=mergeUnique(stored,rels);
-      try{localStorage.setItem(STORAGE_KEY,JSON.stringify(merged));}catch{}
+
+      // ÚNICOS
+      rels = Array.from(new Set(rels));
+
+      // Guardar SOLO la nueva selección (reemplaza)
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(rels)); } catch {}
+
+      // Limpiar hints/colores que no apliquen a la nueva selección
+      try {
+        const keepLabels = new Set();
+        const keepLineasByLabel = new Map();
+
+        for (const rel of rels) {
+          const base = (rel.split('/').pop() || '').toUpperCase();
+          const p = parseIdLineFromName(base);
+          if (p && p.idFull) {
+            const L = (p.idFull || '').toUpperCase();
+            const LN = (p.linea || '').toUpperCase();
+            keepLabels.add(L);
+            if (!keepLineasByLabel.has(L)) keepLineasByLabel.set(L, new Set());
+            if (LN) keepLineasByLabel.get(L).add(LN);
+          }
+        }
+
+        const COLOR_PREFIX = 'dummys_color_for_';
+        const IMG_PREFIX   = 'dummys_img_for_';
+        const keysToDelete = [];
+
+        for (let i=0;i<localStorage.length;i++){
+          const k = localStorage.key(i); if (!k) continue;
+
+          if (k.startsWith(COLOR_PREFIX)) {
+            const label = k.substring(COLOR_PREFIX.length).toUpperCase();
+            if (!keepLabels.has(label)) keysToDelete.push(k);
+          }
+          if (k.startsWith(IMG_PREFIX)) {
+            const rest = k.substring(IMG_PREFIX.length);
+            const [labelRaw, lineaRaw=''] = rest.split('__');
+            const ULabel = (labelRaw||'').toUpperCase();
+            const ULinea = (lineaRaw||'').toUpperCase();
+            if (!keepLabels.has(ULabel)) {
+              keysToDelete.push(k);
+            } else if (ULinea && keepLineasByLabel.has(ULabel) && !keepLineasByLabel.get(ULabel).has(ULinea)) {
+              keysToDelete.push(k);
+            }
+          }
+        }
+        // limpiar last_color para no arrastrarlo
+        keysToDelete.push('dummys_last_color');
+        keysToDelete.forEach(k => localStorage.removeItem(k));
+      } catch(e){ console.warn('No se pudieron limpiar hints antiguos:', e); }
+
       bumpCatalog();
-      render(merged);
-      const estado=$('estado');if(estado)estado.textContent=`Cargados: ${rels.length}  |  Ignorados: ${ignorados}`;
+      render(rels);
+      const estado = $('estado');
+      if (estado) estado.textContent = `Cargados: ${rels.length}  |  Ignorados: ${ignorados}`;
     }
+
     $('dirInput').addEventListener('change',()=>{
       const estado=$('estado');
       if(!$('dirInput').files||!$('dirInput').files.length){if(estado)estado.textContent='No se seleccionaron archivos.';return;}
       if(estado)estado.textContent='Procesando carpeta…';
       handleFileList($('dirInput').files);
     });
-    
-    /* ==== BOTÓN BORRAR MODIFICADO PARA RASPBERRY ==== */
-    $('btn-borrar').addEventListener('click',()=>{
-      if(!confirm('Se borrarán TODOS los datos guardados (tus archivos NO se borran). ¿Continuar?')) return;
-      try{
-        // Método universal que funciona en Windows y Raspberry
-        localStorage.clear();
-        sessionStorage.clear();
 
+    /* ===== Pantalla completa persistente (parche) ===== */
+    const FS_KEY='dummys_fs_wanted';
+    function _fsReq(){
+      const el=document.documentElement;
+      const req=el.requestFullscreen||el.webkitRequestFullscreen||el.mozRequestFullScreen||el.msRequestFullscreen;
+      if(!req) return Promise.resolve(false);
+      return req.call(el).then(()=>true).catch(()=>false);
+    }
+    async function _ensureFSOnce(){ if(document.fullscreenElement) return true; return _fsReq(); }
+    function _armFullscreenPersistence(){
+      try { sessionStorage.setItem(FS_KEY,'1'); } catch(e){}
+      _ensureFSOnce();
+      const tryOnUser=async()=>{ await _ensureFSOnce(); };
+      window.addEventListener('pointerdown',tryOnUser,{once:true});
+      window.addEventListener('keydown',    tryOnUser,{once:true});
 
-        
-        // Limpieza adicional para asegurar en todos los sistemas
-        const keysToRemove = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key && (key.startsWith('dummys_') || 
-                      key === STORAGE_KEY || 
-                      key === LINEA_KEY || 
-                      key === MODE_KEY)) {
-            keysToRemove.push(key);
-          }
+      document.addEventListener('visibilitychange', async ()=>{
+        const want=sessionStorage.getItem(FS_KEY)==='1';
+        if(document.visibilityState==='visible' && want && !document.fullscreenElement){
+          await _ensureFSOnce();
         }
-        
-        keysToRemove.forEach(key => {
-          localStorage.removeItem(key);
-        });
-        
-      }catch(e){
-        console.error('Error al borrar datos:', e);
-        // Fallback: intentar borrar items específicos
-        try {
-          localStorage.removeItem(STORAGE_KEY);
-          localStorage.removeItem(LINEA_KEY);
-          localStorage.removeItem(MODE_KEY);
-          localStorage.removeItem('dummys_last_color');
-          localStorage.removeItem('dummys_catalog_bump');
-          localStorage.removeItem('dummys_cursor_visible');
-          
-          // Limpiar hints de imágenes y colores
-          for (let k in localStorage) {
-            if (k.startsWith("dummys_color_for_") || k.startsWith("dummys_img_for_")) {
-              localStorage.removeItem(k);
-            }
-          }
-        } catch(fallbackError) {
-          console.error('Error en fallback:', fallbackError);
+      });
+      document.addEventListener('fullscreenchange', async ()=>{
+        const want=sessionStorage.getItem(FS_KEY)==='1';
+        if(want && !document.fullscreenElement){ setTimeout(_ensureFSOnce,50); }
+      });
+      window.addEventListener('beforeunload',()=>{ try{ sessionStorage.setItem(FS_KEY,'1'); }catch(e){} });
+      document.addEventListener('click',(ev)=>{
+        const a=ev.target.closest && ev.target.closest('a[href]');
+        if(!a) return;
+        const href=a.getAttribute('href')||'';
+        if(/^(\.|\.{2}|[^:?#]+\.html(\?|#|$))/i.test(href)){
+          try{ sessionStorage.setItem(FS_KEY,'1'); }catch(e){}
         }
-      }
-      
-      // También limpiar sessionStorage
-      try { sessionStorage.clear(); } catch(e) {}
-      
-      bumpCatalog();
-      render([]);
-      const estado=$('estado');
-      if(estado) estado.textContent='Datos borrados correctamente. Usa CONFIGURACIÓN.';
-      $('dirInput').value='';
-      lineaActual='';
-      saveLinea('');
-    });
-
-    $('btn-buscar-linea').addEventListener('click',()=>{const list=readStored();modoVista='LINEAS';saveMode(modoVista);render(list);});
-    $('btn-ver-todo').addEventListener('click',()=>{const list=readStored();lineaActual='';saveLinea(lineaActual);modoVista='D';saveMode(modoVista);render(list);});
-    $('btn-lineas').addEventListener('click',()=>{
-      if(modoVista!=='D')return;
-      const {byLine}=buildLineIndex(readStored());
-      const arr=Array.from(byLine.keys()).sort(naturalCompare);
-      if(!arr.length)return;
-      const i=arr.indexOf(lineaActual);
-      lineaActual=(i<0)?arr[0]:arr[(i+1)%arr.length];
-      saveLinea(lineaActual);render(readStored());
-    });
-
-    function bumpCatalog(){try{localStorage.setItem('dummys_catalog_bump',String(Date.now()));}catch(e){}}
+      },true);
+    }
 
     /* ====== TECLADO NUMÉRICO (clave 99341) ====== */
     const PASS="99341";
@@ -573,44 +621,20 @@
       });
     });
 
-    /* ===== Pantalla completa persistente (parche) ===== */
-    const FS_KEY='dummys_fs_wanted';
-    function _fsReq(){
-      const el=document.documentElement;
-      const req=el.requestFullscreen||el.webkitRequestFullscreen||el.mozRequestFullScreen||el.msRequestFullscreen;
-      if(!req) return Promise.resolve(false);
-      return req.call(el).then(()=>true).catch(()=>false);
-    }
-    async function _ensureFSOnce(){ if(document.fullscreenElement) return true; return _fsReq(); }
-    function _armFullscreenPersistence(){
-      try { sessionStorage.setItem(FS_KEY,'1'); } catch(e){}
-      _ensureFSOnce();
-      const tryOnUser=async()=>{ await _ensureFSOnce(); };
-      window.addEventListener('pointerdown',tryOnUser,{once:true});
-      window.addEventListener('keydown',    tryOnUser,{once:true});
-
-      document.addEventListener('visibilitychange', async ()=>{
-        const want=sessionStorage.getItem(FS_KEY)==='1';
-        if(document.visibilityState==='visible' && want && !document.fullscreenElement){
-          await _ensureFSOnce();
-        }
-      });
-      document.addEventListener('fullscreenchange', async ()=>{
-        const want=sessionStorage.getItem(FS_KEY)==='1';
-        if(want && !document.fullscreenElement){ setTimeout(_ensureFSOnce,50); }
-      });
-      window.addEventListener('beforeunload',()=>{ try{ sessionStorage.setItem(FS_KEY,'1'); }catch(e){} });
-      document.addEventListener('click',(ev)=>{
-        const a=ev.target.closest && ev.target.closest('a[href]');
-        if(!a) return;
-        const href=a.getAttribute('href')||'';
-        if(/^(\.|\.{2}|[^:?#]+\.html(\?|#|$))/i.test(href)){
-          try{ sessionStorage.setItem(FS_KEY,'1'); }catch(e){}
-        }
-      },true);
+    /* ===== Cursor persistente con C+R ===== */
+    const CURSOR_KEY = "dummys_cursor_visible";
+    function applyCursorState(visible){
+      if(visible){
+        document.body.classList.remove("no-cursor");
+      } else {
+        document.body.classList.add("no-cursor");
+      }
+      try{
+        localStorage.setItem(CURSOR_KEY, visible ? "1" : "0");
+      }catch(e){}
     }
 
-    document.addEventListener('DOMContentLoaded',()=>{
+    document.addEventListener("DOMContentLoaded", ()=>{
       _armFullscreenPersistence();
 
       const list=readStored();
@@ -624,6 +648,13 @@
           openLock();
         }
       }catch(e){}
+
+      const saved = localStorage.getItem(CURSOR_KEY);
+      if(saved === null){
+        applyCursorState(false);
+      } else {
+        applyCursorState(saved === "1");
+      }
     });
 
     window.addEventListener('storage',(e)=>{
@@ -631,29 +662,6 @@
         const list=readStored();
         render(list);
         updatePizarronEnabled(list);
-      }
-    });
-
-    /* ===== Cursor persistente con C+R ===== */
-    const CURSOR_KEY = "dummys_cursor_visible";
-
-    function applyCursorState(visible){
-      if(visible){
-        document.body.classList.remove("no-cursor");
-      } else {
-        document.body.classList.add("no-cursor");
-      }
-      try{
-        localStorage.setItem(CURSOR_KEY, visible ? "1" : "0");
-      }catch(e){}
-    }
-
-    document.addEventListener("DOMContentLoaded", ()=>{
-      const saved = localStorage.getItem(CURSOR_KEY);
-      if(saved === null){
-        applyCursorState(false); // arranca oculto
-      } else {
-        applyCursorState(saved === "1");
       }
     });
 
