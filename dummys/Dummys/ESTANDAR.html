@@ -146,7 +146,6 @@
     </div>
   </div>
 
-
 <script>
 /* ====== Bloqueos tipo kiosko ====== */
 window.addEventListener('contextmenu', e => e.preventDefault());
@@ -203,7 +202,6 @@ function deaccent(s){ return String(s||'').normalize('NFD').replace(/[\u0300-\u0
 function normalizeRelPath(p){
   let s=String(p||'').trim().replace(/^["']+|["']+$/g,'');
   s=s.replace(/\\/g,'/').replace(/^\/+/, '');
-  if(/^dummys\//i.test(s)) s=s.replace(/^dummys\//i,'');
   s=s.replace(/\/{2,}/g,'/');
   return s;
 }
@@ -231,11 +229,26 @@ function parseHash(){
 const HASH_INFO = parseHash();
 function getSTD(){   return HASH_INFO.label; }
 function getLINEA(){ return HASH_INFO.linea || (localStorage.getItem('dummys_linea_actual_v10')||'').toUpperCase(); }
-function getCOLOR(){
-  if (HASH_INFO.color) return HASH_INFO.color;
-  const saved = localStorage.getItem(`dummys_color_for_${getSTD()}`) || localStorage.getItem('dummys_last_color') || '';
-  return saved;
+
+/* === [PARCHE] Inferir LABEL desde el src actual si no viene en el hash === */
+function inferStdFromImg(){
+  const img = document.getElementById('estandar');
+  if(!img) return '';
+  const src = normalizeRelPath(img.getAttribute('src')||'');
+  const base = (src.split('/').pop() || '').replace(/\.[^.]+$/,''); // sin extensión
+  return String(base||'').toUpperCase();
 }
+
+/* ====== UI principal (LABEL robusto) ====== */
+const LABEL  = getSTD();                 // puede venir vacío
+const ELABEL = LABEL || inferStdFromImg(); // usar siempre este
+const LINEA  = getLINEA();
+/* COLOR: prioridad hash > color guardado para ELABEL > último color */
+const COLOR  = (()=>{
+  if (HASH_INFO.color) return HASH_INFO.color;
+  return localStorage.getItem(`dummys_color_for_${ELABEL}`) ||
+         localStorage.getItem('dummys_last_color') || '';
+})();
 
 /* ====== Contadores ====== */
 function ckey(tipo,label){ return `dummys_count_${String(tipo)}__${String(label||'').toUpperCase()}`; }
@@ -302,15 +315,15 @@ function getStoredImageHint(label,linea){
     return normalizeRelPath(localStorage.getItem(key) || '');
   }catch{ return ''; }
 }
-function buildImageCandidates(LABEL, LINEA, COLOR){
+function buildImageCandidates(LABELx, LINEAx, COLORx){
   const stems=[];
-  if (LABEL && LINEA){
-    stems.push(`${LABEL}-${LINEA}`, `${LABEL} ${LINEA}`, `${LABEL}${LINEA}`);
+  if (LABELx && LINEAx){
+    stems.push(`${LABELx}-${LINEAx}`, `${LABELx} ${LINEAx}`, `${LABELx}${LINEAx}`);
   }
-  if (LABEL){ stems.push(LABEL); }
-  const bases=buildRelBases(COLOR);
+  if (LABELx){ stems.push(LABELx); }
+  const bases=buildRelBases(COLORx);
   const urls=[];
-  const hinted=getStoredImageHint(LABEL,LINEA);
+  const hinted=getStoredImageHint(LABELx,LINEAx);
   if(hinted) urls.push(hinted);
   for (const base of bases){
     for (const stem of stems){
@@ -339,15 +352,11 @@ function setImageWithFallback(urls){
 }
 
 /* ====== UI principal ====== */
-const LABEL = getSTD();
-const LINEA = getLINEA();
-const COLOR = getCOLOR();
-
 function cambiar(tipo, delta){
   const el = qs(tipo);
   let v = clamp9((parseInt(el.textContent)||0) + delta);
   el.textContent = v;
-  writeUnified(tipo, LABEL||'DEFAULT', v);
+  writeUnified(tipo, ELABEL||'DEFAULT', v);
   const f = qs('feedback');
   f.textContent = 'Datos guardados';
   f.style.display = 'block';
@@ -359,17 +368,17 @@ function setPanelColor(){
     document.documentElement.style.setProperty('--panel-bg', COLOR);
     try{ localStorage.setItem('dummys_last_color', COLOR); }catch(e){}
   } else {
-    const saved = localStorage.getItem(`dummys_color_for_${LABEL}`);
+    const saved = localStorage.getItem(`dummys_color_for_${ELABEL}`);
     if (saved && isHexColor(saved)) document.documentElement.style.setProperty('--panel-bg', saved);
   }
 }
 function buildPizarronHref(){
-  const base='pizarron.htm'; const parts=[encodeURIComponent(LABEL)];
+  const base='pizarron.htm'; const parts=[encodeURIComponent(ELABEL||'')];
   if (LINEA) parts.push(encodeURIComponent(LINEA));
   if (COLOR && isHexColor(COLOR)) parts.push(encodeURIComponent(COLOR));
-  return `${base}#${parts.join(',')}`;
+  return `${base}#${parts.filter(Boolean).join(',')}`;
 }
-function limpiarActual(){ ['centenas','decenas','unidades'].forEach(t=>writeUnified(t, LABEL||'DEFAULT', 0)); }
+function limpiarActual(){ ['centenas','decenas','unidades'].forEach(t=>writeUnified(t, ELABEL||'DEFAULT', 0)); }
 function setupConfirmReturn(){
   const link = qs('toPizarron');
   if(!link) return;
@@ -378,7 +387,7 @@ function setupConfirmReturn(){
     try{ sessionStorage.setItem(FS_FLAG,'1'); }catch(e){}
     const url=new URL(link.href, location.href); url.searchParams.set('fs','1'); link.href=url.toString();
     const modal=qs('confirmModal');
-    const nameSpan=qs('stdName'); if(nameSpan) nameSpan.textContent = LABEL || 'D00*';
+    const nameSpan=qs('stdName'); if(nameSpan) nameSpan.textContent = ELABEL || 'D00*';
     modal.style.display='flex';
     const yes=qs('btnYesClean'); const no=qs('btnNoOnly');
     const goOut=(clean)=>{ modal.style.display='none'; if(clean) limpiarActual(); location.href=link.href; };
@@ -393,35 +402,65 @@ function setupConfirmReturn(){
   }
 }
 
-/* ====== Zoom táctil ====== */
+/* ====== Zoom táctil (sin paneo con un dedo, solo pinch-to-zoom y doble toque para reset) ====== */
 (function enableTouchZoom(){
   const surface=qs('zoom-surface'); const img=qs('estandar');
   if(!surface||!img) return;
   let scale=1, minS=1, maxS=5, tx=0, ty=0;
   let lastTouches=[], lastDist=0, lastCenter={x:0,y:0}, lastTapTime=0;
+
   function apply(){ img.style.transform=`translate(${tx}px, ${ty}px) scale(${scale})`; }
   function dist(a,b){ return Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY); }
   function center(a,b){ return {x:(a.clientX+b.clientX)/2, y:(a.clientY+b.clientY)/2}; }
+
   function onPointerDown(e){ e.preventDefault(); surface.setPointerCapture && surface.setPointerCapture(e.pointerId); }
+
   function onTouchStart(e){
-    e.preventDefault(); const now=Date.now();
-    if(e.touches.length===1){ if(now-lastTapTime<300){ scale=1; tx=0; ty=0; apply(); } lastTapTime=now; }
-    lastTouches=Array.from(e.touches);
-    if(e.touches.length===2){ lastDist=dist(e.touches[0],e.touches[1])||1; lastCenter=center(e.touches[0],e.touches[1]); }
-  }
-  function onTouchMove(e){
-    e.preventDefault(); const t=Array.from(e.touches);
-    if(t.length===2){
-      const d=dist(t[0],t[1])||1, c=center(t[0],t[1]); const ds=d/(lastDist||d);
-      const prev=scale; scale=Math.min(maxS, Math.max(minS, scale*ds)); const k=scale/(prev||1);
-      tx=(tx-c.x)*k+c.x; ty=(ty-c.y)*k+c.y;
-      lastDist=d; lastCenter=c; apply();
-    } else if(t.length===1 && lastTouches.length===1){
-      const cur=t[0], prev=lastTouches[0]; tx+=cur.clientX-prev.clientX; ty+=cur.clientY-prev.clientY; apply();
+    e.preventDefault();
+    const now=Date.now();
+    if(e.touches.length===1){
+      if(now-lastTapTime<300){ scale=1; tx=0; ty=0; apply(); } // doble toque = reset
+      lastTapTime=now;
     }
+    lastTouches=Array.from(e.touches);
+    if(e.touches.length===2){
+      lastDist=dist(e.touches[0],e.touches[1])||1;
+      lastCenter=center(e.touches[0],e.touches[1]);
+    }
+  }
+
+  function onTouchMove(e){
+    e.preventDefault();
+    const t=Array.from(e.touches);
+
+    if(t.length===2){
+      // Pinch-to-zoom permitido
+      const d=dist(t[0],t[1])||1;
+      const c=center(t[0],t[1]);
+      const ds=d/(lastDist||d);
+
+      const prev=scale;
+      scale=Math.min(maxS, Math.max(minS, scale*ds));
+      const k=scale/(prev||1);
+
+      // Mantener el centro del pellizco
+      tx=(tx-c.x)*k+c.x;
+      ty=(ty-c.y)*k+c.y;
+
+      lastDist=d;
+      lastCenter=c;
+      apply();
+    }
+    // 1 dedo: no pan
     lastTouches=t;
   }
-  function onTouchEnd(e){ e.preventDefault(); lastTouches=Array.from(e.touches); if(lastTouches.length<2){ lastDist=0; } }
+
+  function onTouchEnd(e){
+    e.preventDefault();
+    lastTouches=Array.from(e.touches);
+    if(lastTouches.length<2){ lastDist=0; }
+  }
+
   surface.addEventListener('touchstart',onTouchStart,{passive:false});
   surface.addEventListener('touchmove', onTouchMove ,{passive:false});
   surface.addEventListener('touchend' , onTouchEnd  ,{passive:false});
@@ -454,8 +493,9 @@ function togglePower(){ sleeping=!sleeping; updatePowerUI(); }
 
 /* ====== Carga inicial ====== */
 document.addEventListener('DOMContentLoaded', ()=>{
-  ['centenas','decenas','unidades'].forEach(t=> qs(t).textContent = leer(t, LABEL||'DEFAULT'));
-  if(LABEL){ const urls=buildImageCandidates(LABEL, LINEA, COLOR); setImageWithFallback(urls); }
+  ['centenas','decenas','unidades'].forEach(t=> qs(t).textContent = leer(t, ELABEL||'DEFAULT'));
+  const urls=buildImageCandidates(ELABEL, LINEA, COLOR);
+  setImageWithFallback(urls);
   setPanelColor();
   const a=document.querySelector('#toPizarron'); if(a){ a.href=buildPizarronHref(); }
   setupConfirmReturn();
@@ -468,8 +508,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
 window.addEventListener('storage', (e)=>{
   if(!e.key) return;
   if(/^dummys_count_/.test(e.key)){
-    if(!LABEL) return;
-    ['centenas','decenas','unidades'].forEach(t=>{ qs(t).textContent = leer(t, LABEL||'DEFAULT'); });
+    if(!ELABEL) return;
+    ['centenas','decenas','unidades'].forEach(t=>{ qs(t).textContent = leer(t, ELABEL||'DEFAULT'); });
   }
 });
 document.getElementById('estandar').addEventListener('dragstart', e => e.preventDefault());
