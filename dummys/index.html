@@ -16,7 +16,11 @@
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html, body { height: 100%; margin: 0; padding: 0; }
     html, body, img, a { -webkit-user-drag: none; }
-    body, html, body * { cursor: none !important; }
+
+    /* Clase dinámica para ocultar el cursor */
+    .no-cursor, .no-cursor * {
+      cursor: none !important;
+    }
 
     body {
       font-family: Arial, sans-serif;
@@ -43,9 +47,7 @@
       align-items: flex-start;
     }
 
-    /* TAMAÑO DOBLE DEL LOGO */
     #boton4 { height: 200px; }
-
     .animation-apng { height: 400px; }
 
     .version {
@@ -107,20 +109,6 @@
       .botones-container { flex-direction:column; align-items:center; bottom:50px; padding:0; gap:20px; }
       .boton { width:90%; height:120px; font-size:40px; }
     }
-
-    /* Overlay para recuperar FS con gesto si el navegador lo exige */
-    #fsPrompt{
-      position:fixed; inset:0; display:none; align-items:center; justify-content:center;
-      background:rgba(0,0,0,.85); color:#fff; z-index:99998;
-      font-weight:900; letter-spacing:.5px; text-align:center; padding:20px;
-    }
-    #fsPrompt .box{
-      background:rgba(255,255,255,.08); border-radius:16px; padding:18px 22px; max-width:90%;
-      border:2px solid rgba(255,255,255,.15);
-    }
-    #fsPrompt .box button{
-      margin-top:12px; padding:10px 16px; border-radius:12px; border:none; font-weight:900; cursor:pointer;
-    }
   </style>
 </head>
 <body>
@@ -132,157 +120,69 @@
 
   <div class="botones-container">
     <a href="Dummys/menu-principal.html" class="boton" draggable="false">MENU<br>PRINCIPAL</a>
-
-    <a id="btnPizarron" href="Dummys/pizarron.htm" class="boton disabled" draggable="false" aria-disabled="true" title="Carga estándares en el MENÚ para activar">
+    <a id="btnPizarron" href="Dummys/pizarron.htm" class="boton disabled" draggable="false" aria-disabled="true"
+       title="Carga estándares en el MENÚ para activar">
       PIZARRON
     </a>
   </div>
 
-  <!-- Prompt para “toca para continuar” -->
-  <div id="fsPrompt">
-    <div class="box">
-      <div>Toca para continuar en pantalla completa</div>
-      <button id="fsBtn">Continuar</button>
-    </div>
-  </div>
-
   <script>
-    /* ========= Pantalla completa PERSISTENTE entre páginas ========= */
+    /* ========= Cursor oculto por defecto y alternable con C+R ========= */
+    const CURSOR_KEY = "dummys_cursor_visible";
+    function applyCursorState(visible){
+      if(visible){ document.body.classList.remove("no-cursor"); }
+      else{ document.body.classList.add("no-cursor"); }
+      try{ localStorage.setItem(CURSOR_KEY, visible ? "1" : "0"); }catch(e){}
+    }
+    document.addEventListener("DOMContentLoaded", ()=>{ applyCursorState(false); }); // SIEMPRE oculto al iniciar
+
+    const pressedKeys = new Set();
+    window.addEventListener("keydown", (e)=>{
+      pressedKeys.add(e.key.toLowerCase());
+      if(pressedKeys.has("c") && pressedKeys.has("r")){
+        const isVisible = !document.body.classList.contains("no-cursor");
+        applyCursorState(!isVisible);
+      }
+    });
+    window.addEventListener("keyup", (e)=>{ pressedKeys.delete(e.key.toLowerCase()); });
+
+    /* ========= Pantalla completa persistente SIN mensaje ========= */
     const FS_FLAG = 'dummys_fs_intent';
     const docEl = document.documentElement;
-
-    function isFS(){
-      return !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
-    }
-    function reqFS(){
-      const r = docEl.requestFullscreen || docEl.webkitRequestFullscreen || docEl.mozRequestFullScreen || docEl.msRequestFullscreen;
-      if (r) return r.call(docEl).catch(()=>{});
-    }
-    function showFSPrompt(){ document.getElementById('fsPrompt').style.display = 'flex'; }
-    function hideFSPrompt(){ document.getElementById('fsPrompt').style.display = 'none'; }
-
-    function ensureFSByGesture(){
-      const once = ()=>{ hideFSPrompt(); reqFS(); window.removeEventListener('pointerdown', once, true); window.removeEventListener('keydown', once, true); };
-      window.addEventListener('pointerdown', once, true);
-      window.addEventListener('keydown', once, true);
-    }
-
-    function tryEnterFSImmediate(){
-      reqFS();                     // intenta directo
-      setTimeout(()=>{             // si no queda, muestra prompt
-        if (!isFS()) showFSPrompt();
-      }, 150);
-      ensureFSByGesture();         // y habilita gesto de respaldo
-    }
-
-    function markLeaving(){
-      try { sessionStorage.setItem(FS_FLAG, '1'); } catch(e){}
-    }
-
+    function isFS(){ return !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement); }
+    function reqFS(){ const r = docEl.requestFullscreen || docEl.webkitRequestFullscreen || docEl.mozRequestFullScreen || docEl.msRequestFullscreen; if (r) return r.call(docEl).catch(()=>{}); }
+    function tryEnterFSImmediate(){ reqFS(); }
+    function markLeaving(){ try { sessionStorage.setItem(FS_FLAG, '1'); } catch(e){} }
     function autoFSInit(){
-      // Si venimos de otra página con intención de FS (o traemos ?fs=1), entrar
       if (sessionStorage.getItem(FS_FLAG) === '1' || /[?#&]fs=1\b/.test(location.href)) {
         tryEnterFSImmediate();
         try { sessionStorage.removeItem(FS_FLAG); } catch(e){}
-      } else {
-        // Si es la primera vez, queda listo para un gesto
-        ensureFSByGesture();
       }
-
-      // Reintentar si se pierde por cualquier evento
       const reenter = ()=>{ if (!isFS()) tryEnterFSImmediate(); };
-      ['fullscreenchange','webkitfullscreenchange','mozfullscreenchange','MSFullscreenChange','visibilitychange'].forEach(evt => {
-        document.addEventListener(evt, reenter);
-      });
-
-      // pageshow (por navegación hacia atrás/adelante)
-      window.addEventListener('pageshow', ()=>{
-        if (sessionStorage.getItem(FS_FLAG) === '1' || /[?#&]fs=1\b/.test(location.href)) {
-          tryEnterFSImmediate();
-          try { sessionStorage.removeItem(FS_FLAG); } catch(e){}
-        }
-      });
-
-      // Botón del prompt
-      const fsBtn = document.getElementById('fsBtn');
-      if (fsBtn) fsBtn.addEventListener('click', ()=>{ hideFSPrompt(); tryEnterFSImmediate(); });
-
-      // Intercepta TODOS los enlaces para mantener FS en la siguiente página
-      document.addEventListener('click', (e)=>{
-        const a = e.target.closest && e.target.closest('a[href]');
-        if (!a) return;
-        const href = a.getAttribute('href');
-        if (!href || href.startsWith('javascript:') || href.startsWith('#')) return;
-
-        // Marca intención y añade ?fs=1 (o &fs=1) al destino
+      ['fullscreenchange','webkitfullscreenchange','mozfullscreenchange','MSFullscreenChange','visibilitychange']
+        .forEach(evt => { document.addEventListener(evt, reenter); });
+      window.addEventListener('pageshow', ()=>{ if (sessionStorage.getItem(FS_FLAG) === '1') { tryEnterFSImmediate(); try { sessionStorage.removeItem(FS_FLAG); } catch(e){} } });
+      document.addEventListener('click', (e)=>{ const a = e.target.closest && e.target.closest('a[href]'); if (!a) return;
+        const href = a.getAttribute('href'); if (!href || href.startsWith('javascript:') || href.startsWith('#')) return;
         markLeaving();
-        try {
-          const url = new URL(href, location.href);
-          url.searchParams.set('fs','1');
-          a.setAttribute('href', url.toString());
-        } catch(_){}
+        try { const url = new URL(href, location.href); url.searchParams.set('fs','1'); a.setAttribute('href', url.toString()); } catch(_){}
       }, true);
     }
-
     document.addEventListener('DOMContentLoaded', autoFSInit);
 
-    /* ===== Lógica Pizarrón habilitado si hay modelos ===== */
-    const STORAGE_KEYS = [
-      'dummys_rel_paths_master_v2','dummys_rel_paths_v4','dummys_rel_paths_v3','dummys_rel_paths_v2','dummys_rel_paths'
-    ];
-    function normalizeRelPath(p){
-      p = String(p||'').trim().replace(/^["']+|["']+$/g,'').replace(/\\/g,'/');
-      const low = p.toLowerCase(); const i = low.lastIndexOf('dummys/');
-      if (i >= 0) { p = p.substring(i); if (p.startsWith('/')) p = p.slice(1); }
-      return p;
-    }
-    function filenameNoExt(path){
-      const base = String(path).split('/').pop().toUpperCase();
-      return base.replace(/\.(HTML?|HTM|JPE?G|PNG)$/,'');
-    }
-    function readStoredAny(){
-      let merged = [];
-      for (const k of STORAGE_KEYS) {
-        try {
-          const v = JSON.parse(localStorage.getItem(k) || '[]');
-          if (Array.isArray(v) && v.length) merged = merged.concat(v);
-        } catch {}
-      }
-      return Array.from(new Set((merged || []).map(normalizeRelPath).filter(Boolean)));
-    }
-    function hayModelos(){
-      const rels = readStoredAny();
-      for (const rel of rels) {
-        const base = filenameNoExt(rel);
-        if (/^D[0-9O]{3,4}[A-Z]*\b/.test(base)) return true;
-        if (/\bR\d+\s*[-_–—]\s*(AVI|POLI)\b/.test(base)) return true;
-      }
-      return false;
-    }
+    /* ========= Lógica Pizarrón ========= */
+    const STORAGE_KEYS = ['dummys_rel_paths_master_v2','dummys_rel_paths_v4','dummys_rel_paths_v3','dummys_rel_paths_v2','dummys_rel_paths'];
+    function normalizeRelPath(p){ p = String(p||'').trim().replace(/^["']+|["']+$/g,'').replace(/\\/g,'/'); const low = p.toLowerCase(); const i = low.lastIndexOf('dummys/'); if (i >= 0) { p = p.substring(i); if (p.startsWith('/')) p = p.slice(1); } return p; }
+    function filenameNoExt(path){ const base = String(path).split('/').pop().toUpperCase(); return base.replace(/\.(HTML?|HTM|JPE?G|PNG)$/,''); }
+    function readStoredAny(){ let merged = []; for (const k of STORAGE_KEYS) { try { const v = JSON.parse(localStorage.getItem(k) || '[]'); if (Array.isArray(v) && v.length) merged = merged.concat(v); } catch {} } return Array.from(new Set((merged || []).map(normalizeRelPath).filter(Boolean))); }
+    function hayModelos(){ const rels = readStoredAny(); for (const rel of rels) { const base = filenameNoExt(rel); if (/^D[0-9O]{3,4}[A-Z]*\b/.test(base)) return true; if (/\bR\d+\s*[-_–—]\s*(AVI|POLI)\b/.test(base)) return true; } return false; }
     const btnPizarron = document.getElementById('btnPizarron');
-    function refrescarEstadoPizarron(){
-      const activo = hayModelos();
-      if (activo) {
-        btnPizarron.classList.remove('disabled');
-        btnPizarron.setAttribute('aria-disabled','false');
-        btnPizarron.title = 'Abrir Pizarrón';
-      } else {
-        btnPizarron.classList.add('disabled');
-        btnPizarron.setAttribute('aria-disabled','true');
-        btnPizarron.title = 'Carga estándares en el MENÚ para activar';
-      }
-    }
-    btnPizarron.addEventListener('click', e => {
-      if (btnPizarron.classList.contains('disabled')) {
-        e.preventDefault();
-        if (navigator.vibrate) navigator.vibrate(30);
-      }
-    });
+    function refrescarEstadoPizarron(){ const activo = hayModelos(); if (activo) { btnPizarron.classList.remove('disabled'); btnPizarron.setAttribute('aria-disabled','false'); btnPizarron.title = 'Abrir Pizarrón'; } else { btnPizarron.classList.add('disabled'); btnPizarron.setAttribute('aria-disabled','true'); btnPizarron.title = 'Carga estándares en el MENÚ para activar'; } }
+    btnPizarron.addEventListener('click', e => { if (btnPizarron.classList.contains('disabled')) { e.preventDefault(); if (navigator.vibrate) navigator.vibrate(30); } });
     document.addEventListener('DOMContentLoaded', ()=>{ refrescarEstadoPizarron(); });
     window.addEventListener('storage', (e)=>{ if(!e.key) return; if(e.key==='dummys_catalog_bump' || STORAGE_KEYS.includes(e.key)) refrescarEstadoPizarron(); });
     setInterval(refrescarEstadoPizarron, 1500);
 
-    /* Kiosko extra */
     document.addEventListener('contextmenu', e=>e.preventDefault());
     document.addEventListener('selectstart', e=>e.preventDefault());
     document.addEventListener('dragstart',  e=>e.preventDefault());

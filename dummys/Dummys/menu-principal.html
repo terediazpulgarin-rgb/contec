@@ -8,6 +8,11 @@
     body{font-family:Arial, sans-serif;background-image:url('imagenes/Dummys.png');background-size:cover;background-position:center;background-repeat:no-repeat;margin:0;padding:0;height:100vh;overflow:hidden;display:flex;user-select:none}
     body*,html{cursor:none!important}
 
+    /* Clase dinámica para ocultar cursor */
+    .no-cursor, .no-cursor * {
+      cursor: none !important;
+    }
+    
     .contenido-principal{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative}
     .fondo-botones{position:absolute;background-color:rgba(222,222,222,.85);border-radius:15px;padding:20px;width:90%;max-width:900px;min-height:75vh;height:auto;margin-top:40px;border:2px solid rgba(0,0,0,.1);box-shadow:0 0 20px rgba(0,0,0,.2);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;overflow-y:auto;z-index:1}
 
@@ -252,17 +257,22 @@
       return null;
     }
 
-    function buildNameCandidates(label,linea,idKey){
-      const L=String(label||'').toUpperCase(),K=String(idKey||'').toUpperCase(),LN=String(linea||'').toUpperCase();
-      const bases=new Set(); if(L)bases.add(L); if(K)bases.add(K);
+    /* ==== corregido: no usar idKey como candidato de imagen ==== */
+    function buildNameCandidates(label,linea){
+      const L=String(label||'').toUpperCase();
+      const LN=String(linea||'').toUpperCase();
       const outs=[];
-      if(LN){for(const b of bases){outs.push(`${b}-${LN}.jpg`,`${b}-${LN}.jpeg`,`${b}-${LN}.png`);}}
-      for(const b of bases){outs.push(`${b}.jpg`,`${b}.jpeg`,`${b}.png`);}
+      if(!L) return outs;
+      if(LN){
+        outs.push(`${L}-${LN}.jpg`,`${L}-${LN}.jpeg`,`${L}-${LN}.png`);
+      }
+      outs.push(`${L}.jpg`,`${L}.jpeg`,`${L}.png`);
       return outs;
     }
 
-    function storeImageHint(label,linea,idKey,list){
-      const cand=buildNameCandidates(label,linea,idKey).map(s=>s.toUpperCase());
+    /* ==== corregido: storeImageHint ya no usa idKey ==== */
+    function storeImageHint(label,linea,list){
+      const cand=buildNameCandidates(label,linea).map(s=>s.toUpperCase());
       for(const rel of (list||[])){
         if(!isRelImagePath(rel))continue;
         const base=(rel.split('/').pop()||'').toUpperCase();
@@ -296,7 +306,8 @@
         if(!modelColorCache.has(idFull)){
           let hex = getPathColor(rel);
           if(!hex){
-            const saved = localStorage.getItem(`dummys_color_for_${idFull}`) || localStorage.getItem(`dummys_color_for_${idKey}`);
+            /* ==== corregido: sólo leer color por idFull ==== */
+            const saved = localStorage.getItem(`dummys_color_for_${idFull}`);
             if(saved && /^#[0-9a-f]{3,6}$/i.test(saved)) hex = saved;
           }
           if(!hex) hex = '#ffeb3b';
@@ -341,7 +352,8 @@
       }
 
       for(const m of map.values()){
-        const saved=localStorage.getItem(`dummys_color_for_${m.label}`) || localStorage.getItem(`dummys_color_for_${m.idKey}`);
+        /* ==== corregido: sólo color guardado por label (idFull) ==== */
+        const saved=localStorage.getItem(`dummys_color_for_${m.label}`);
         if(saved && /^#[0-9a-f]{3,6}$/i.test(saved)) m.bg=saved;
         if(!m.bg) m.bg='#ffeb3b';
       }
@@ -389,13 +401,16 @@
         btn.addEventListener('click',()=>{
           try{
             if(m.bg){
+              /* ==== corregido: guardar sólo por label (idFull) ==== */
               localStorage.setItem(`dummys_color_for_${String(m.label).toUpperCase()}`,m.bg);
-              localStorage.setItem(`dummys_color_for_${String(m.idKey).toUpperCase()}`,m.bg);
               localStorage.setItem('dummys_last_color',m.bg);
             }
           }catch(e){}
           const searchPool=lineaActual?list.filter(rel=>canonLinea((byRelLine.get(normalizeRelPath(rel))||''))===canonLinea(lineaActual)):list;
-          storeImageHint(m.label,(m.linea||lineaActual||'').toUpperCase(),m.idKey,searchPool);
+
+          /* ==== corregido: storeImageHint(label, linea, list) ==== */
+          storeImageHint(m.label,(m.linea||lineaActual||'').toUpperCase(),searchPool);
+
           const lineaSel=(m.linea||lineaActual||'').toUpperCase();
           const parts=[m.label];
           if(lineaSel) parts.push(encodeURIComponent(lineaSel));
@@ -448,12 +463,34 @@
       handleFileList($('dirInput').files);
     });
     $('btn-borrar').addEventListener('click',()=>{
-      if(!confirm('Se borrará la lista guardada (tus archivos NO se borran). ¿Continuar?'))return;
-      try{localStorage.removeItem(STORAGE_KEY);}catch(e){}
-      bumpCatalog();render([]);
-      const estado=$('estado');if(estado)estado.textContent='Datos borrados. Usa CONFIGURACIÓN.';
-      $('dirInput').value='';lineaActual='';saveLinea('');
+      if(!confirm('Se borrarán TODOS los datos guardados (tus archivos NO se borran). ¿Continuar?')) return;
+      try{
+        // Opción 1: limpiar TODO el localStorage
+        localStorage.clear();
+
+        // --- Opción 2 (más segura): eliminar solo lo que usa tu app ---
+        /*
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(LINEA_KEY);
+        localStorage.removeItem(MODE_KEY);
+        localStorage.removeItem('dummys_last_color');
+        // Y también limpiar todos los hints de imágenes / colores guardados
+        for (let k in localStorage) {
+          if (k.startsWith("dummys_color_for_") || k.startsWith("dummys_img_for_")) {
+            localStorage.removeItem(k);
+          }
+        }
+        */
+      }catch(e){}
+      bumpCatalog();
+      render([]);
+      const estado=$('estado');
+      if(estado) estado.textContent='Datos borrados. Usa CONFIGURACIÓN.';
+      $('dirInput').value='';
+      lineaActual='';
+      saveLinea('');
     });
+
 
     $('btn-buscar-linea').addEventListener('click',()=>{const list=readStored();modoVista='LINEAS';saveMode(modoVista);render(list);});
     $('btn-ver-todo').addEventListener('click',()=>{const list=readStored();lineaActual='';saveLinea(lineaActual);modoVista='D';saveMode(modoVista);render(list);});
@@ -570,6 +607,41 @@
         render(list);
         updatePizarronEnabled(list);
       }
+    });
+
+    /* ===== Cursor persistente con C+R ===== */
+    const CURSOR_KEY = "dummys_cursor_visible";
+
+    function applyCursorState(visible){
+      if(visible){
+        document.body.classList.remove("no-cursor");
+      } else {
+        document.body.classList.add("no-cursor");
+      }
+      try{
+        localStorage.setItem(CURSOR_KEY, visible ? "1" : "0");
+      }catch(e){}
+    }
+
+    document.addEventListener("DOMContentLoaded", ()=>{
+      const saved = localStorage.getItem(CURSOR_KEY);
+      if(saved === null){
+        applyCursorState(false); // arranca oculto
+      } else {
+        applyCursorState(saved === "1");
+      }
+    });
+
+    const pressedKeys = new Set();
+    window.addEventListener("keydown", (e)=>{
+      pressedKeys.add(e.key.toLowerCase());
+      if(pressedKeys.has("c") && pressedKeys.has("r")){
+        const isVisible = !document.body.classList.contains("no-cursor");
+        applyCursorState(!isVisible);
+      }
+    });
+    window.addEventListener("keyup", (e)=>{
+      pressedKeys.delete(e.key.toLowerCase());
     });
   </script>
 </body>
