@@ -20,6 +20,7 @@
     .btn-texto{width:200px;height:56px;font-weight:700;display:flex;align-items:center;justify-content:center;color:#080;border:2px solid #080;border-radius:8px;box-shadow:0 4px 8px rgba(0,0,0,.2);background:#e9e9e9;user-select:none;transition:box-shadow .2s,transform .2s}
     .btn-azul{background:#0d47a1;color:#fff;border-color:#0d47a1}
     .btn-rojo{background:#b71c1c;color:#fff;border-color:#b71c1c}
+    .btn-verde{background:#1b5e20;color:#fff;border-color:#1b5e20}
     .btn-texto:hover{transform:scale(1.03);box-shadow:0 6px 12px rgba(0,0,0,.3)}
 
     .botones-sub{
@@ -68,6 +69,12 @@
 
     .file-button{position:relative;overflow:hidden;text-align:center}
     .file-button input[type=file]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+
+    .toast{
+      position:fixed;left:50%;bottom:16px;transform:translateX(-50%);
+      background:#000;color:#fff;padding:10px 16px;border-radius:10px;
+      font-weight:900;box-shadow:0 4px 14px rgba(0,0,0,.35);display:none;z-index:100000
+    }
 
     @media (max-width:1200px){ .botones-sub{grid-template-columns:repeat(6, minmax(90px,1fr));} }
     @media (max-width:1024px){ .botones-sub{grid-template-columns:repeat(5, minmax(90px,1fr));} }
@@ -122,6 +129,7 @@
           <strong>SELECCIONAR CARPETA</strong>
           <input id="dirInput" type="file" multiple webkitdirectory />
         </label>
+        <button class="btn-texto btn-verde" id="btn-guardar" type="button"><strong>GUARDAR ÚLTIMO</strong></button>
         <button class="btn-texto btn-rojo" id="btn-borrar" type="button"><strong>BORRAR DATOS</strong></button>
       </div>
     </div>
@@ -146,6 +154,8 @@
     </div>
   </div>
 
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
   <script>
     /* ====== Kiosko: bloquear gestos/sistema con mouse/scroll ====== */
     window.addEventListener('contextmenu', e => e.preventDefault());
@@ -158,24 +168,12 @@
           STORAGE_KEY='dummys_rel_paths_master_v2',
           LINEA_KEY='dummys_linea_actual_v10',
           MODE_KEY='dummys_modo_vista_v8',
-          CLEAN_KEY='dummys_clean_mode_v1';   // MODO LIMPIO PERSISTENTE
+          CLEAN_KEY='dummys_clean_mode_v1',   // MODO LIMPIO PERSISTENTE
+          SNAP_KEY='dummys_snapshot_v1';      // ÚLTIMO GUARDADO
 
     const STD_PAGE='ESTANDAR.html';
     const $=(id)=>document.getElementById(id);
     let modoVista=readMode()||'D', lineaActual=readLinea()||'';
-
-    /* ==== Candado anti-rehidratación: si CLEAN está activo, bloquear escrituras salvo la bandera ==== */
-    (function gateCleanMode(){
-      try{
-        if(localStorage.getItem(CLEAN_KEY)==='1'){
-          const _set = localStorage.setItem.bind(localStorage);
-          localStorage.setItem = function(k,v){
-            if(k!==CLEAN_KEY) return;  // bloquear todo salvo la bandera
-            return _set(k,v);
-          };
-        }
-      }catch(_){}
-    })();
 
     /* ===== Utilidades ===== */
     function normalizeRelPath(p){
@@ -320,6 +318,27 @@
       if(ok){a.classList.remove('pizarron-disabled');a.setAttribute('href','pizarron.htm');a.removeAttribute('aria-disabled');hint.style.display='none';}
       else{a.classList.add('pizarron-disabled');a.setAttribute('href','#');a.setAttribute('aria-disabled','true');hint.style.display='block';}
     }
+
+    function buildNameCandidates(label,linea){
+      const L=String(label||'').toUpperCase();
+      const LN=String(linea||'').toUpperCase();
+      const outs=[]; if(!L) return outs;
+      if(LN){ outs.push(`${L}-${LN}.jpg`,`${L}-${LN}.jpeg`,`${L}-${LN}.png`); }
+      outs.push(`${L}.jpg`,`${L}.jpeg`,`${L}.png`);
+      return outs;
+    }
+    function storeImageHint(label,linea,list){
+      const cand=buildNameCandidates(label,linea).map(s=>s.toUpperCase());
+      for(const rel of (list||[])){
+        if(!isRelImagePath(rel))continue;
+        const base=(rel.split('/').pop()||'').toUpperCase();
+        if(cand.includes(base)){
+          try{ localStorage.setItem(`dummys_img_for_${String(label).toUpperCase()}__${String(linea||'').toUpperCase()}`, rel); }catch(e){}
+          return;
+        }
+      }
+    }
+
     function render(list){
       const cont=$('lista-dummys'),estado=$('estado');cont.innerHTML='';
       updatePizarronEnabled(list);
@@ -377,27 +396,50 @@
       });
     }
 
-    function buildNameCandidates(label,linea){
-      const L=String(label||'').toUpperCase();
-      const LN=String(linea||'').toUpperCase();
-      const outs=[]; if(!L) return outs;
-      if(LN){ outs.push(`${L}-${LN}.jpg`,`${L}-${LN}.jpeg`,`${L}-${LN}.png`); }
-      outs.push(`${L}.jpg`,`${L}.jpeg`,`${L}.png`);
-      return outs;
+    function bumpCatalog(){try{localStorage.setItem('dummys_catalog_bump',String(Date.now()));}catch(e){}}
+
+    /* ===================== SNAPSHOT (GUARDAR/RESTAURAR) ===================== */
+    function showToast(txt, ok=true){
+      const t=$('toast'); if(!t) return;
+      t.textContent = txt;
+      t.style.background = ok ? '#1b5e20' : '#b71c1c';
+      t.style.display='block';
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(()=> t.style.display='none', 1400);
     }
-    function storeImageHint(label,linea,list){
-      const cand=buildNameCandidates(label,linea).map(s=>s.toUpperCase());
-      for(const rel of (list||[])){
-        if(!isRelImagePath(rel))continue;
-        const base=(rel.split('/').pop()||'').toUpperCase();
-        if(cand.includes(base)){
-          try{ localStorage.setItem(`dummys_img_for_${String(label).toUpperCase()}__${String(linea||'').toUpperCase()}`, rel); }catch(e){}
-          return;
-        }
+
+    function saveSnapshot(manual=false){
+      try{
+        const rels = JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]')||[];
+        const payload = { rels, savedAt: Date.now() };
+        localStorage.setItem(SNAP_KEY, JSON.stringify(payload));
+        if(manual) showToast('Último guardado actualizado', true);
+        return true;
+      }catch(e){
+        if(manual) showToast('Error al guardar último', false);
+        return false;
       }
     }
 
-    function bumpCatalog(){try{localStorage.setItem('dummys_catalog_bump',String(Date.now()));}catch(e){}}
+    function restoreSnapshotIfEmpty(){
+      try{
+        if(localStorage.getItem(CLEAN_KEY)==='1') return false; // en modo limpio no restauramos
+        const current = JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]')||[];
+        if(current.length) return false;
+        const snapRaw = localStorage.getItem(SNAP_KEY);
+        if(!snapRaw) return false;
+        const snap = JSON.parse(snapRaw);
+        if(!snap || !Array.isArray(snap.rels) || !snap.rels.length) return false;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(snap.rels));
+        bumpCatalog();
+        const estado=$('estado'); if(estado) estado.textContent='Se cargó el último guardado automáticamente.';
+        showToast('Restaurado el último guardado', true);
+        return true;
+      }catch(e){
+        showToast('No se pudo restaurar el último', false);
+        return false;
+      }
+    }
 
     /* ==== SELECCIÓN DE CARPETA ==== */
     function handleFileList(fileList){
@@ -419,7 +461,12 @@
         // Al cargar algo, desactivar modo limpio
         localStorage.setItem(CLEAN_KEY, '0');
         localStorage.setItem(STORAGE_KEY, JSON.stringify(rels));
-      } catch {}
+        // Autoguardar snapshot del catálogo
+        saveSnapshot(false);
+        showToast('Carpeta cargada y guardada', true);
+      } catch {
+        showToast('Error al guardar la carpeta', false);
+      }
 
       // Limpiar hints/colores antiguos que ya no apliquen
       try {
@@ -476,6 +523,110 @@
       if(!$('dirInput').files||!$('dirInput').files.length){if(estado)estado.textContent='No se seleccionaron archivos.';return;}
       if(estado)estado.textContent='Procesando carpeta…';
       handleFileList($('dirInput').files);
+    });
+
+    // Botón GUARDAR ÚLTIMO (manual)
+    $('btn-guardar').addEventListener('click', ()=>{
+      const ok = saveSnapshot(true);
+      if(ok) bumpCatalog();
+    });
+
+    /* ===================== RESET TOTAL (BORRAR DATOS) ===================== */
+    const DUMMYS_KEYS = [
+      'dummys_rel_paths_master_v2','dummys_rel_paths_v4','dummys_rel_paths_v3',
+      'dummys_rel_paths_v2','dummys_rel_paths',
+      'dummys_clean_mode_v1','dummys_snapshot_v1','dummys_catalog_bump',
+      'dummys_cursor_visible','dummys_last_color','dummys_last_std',
+      'dummys_plan_v1','dummys_fs_wanted','dummys_fs_intent'
+    ];
+    const BUMP_KEY  = 'dummys_catalog_bump';
+
+    async function deepClearWebData() {
+      try { window.__DUMMYS_NUKE__ = true; } catch(_){}
+
+      // 1) Local/Session Storage
+      try {
+        // Borra conocidas
+        for (const k of DUMMYS_KEYS) localStorage.removeItem(k);
+
+        // Borra por patrón (contadores, done, colores, hints, modos/líneas)
+        const del = [];
+        for (let i=0; i<localStorage.length; i++){
+          const k = localStorage.key(i) || '';
+          if (
+            /^dummys_count_(centenas|decenas|unidades)__/i.test(k) ||
+            /^(centenas|decenas|unidades)-/i.test(k) ||
+            /^dummys_done__/i.test(k) ||
+            /^dummys_color_for_/i.test(k) ||
+            /^dummys_img_for_/i.test(k) ||
+            /^dummys_modo_vista_/i.test(k) ||
+            /^dummys_linea_actual_/i.test(k)
+          ){
+            del.push(k);
+          }
+        }
+        del.forEach(k => localStorage.removeItem(k));
+
+        // Limpieza total por si queda algo
+        localStorage.clear();
+      } catch(_){}
+
+      try { sessionStorage.clear(); } catch(_){}
+
+      // 2) IndexedDB
+      try {
+        if (indexedDB.databases) {
+          const dbs = await indexedDB.databases();
+          if (Array.isArray(dbs)) {
+            await Promise.allSettled(dbs.map(db => {
+              try { return indexedDB.deleteDatabase(db.name); } catch(_) {}
+            }));
+          }
+        }
+      } catch(_){}
+
+      // 3) Cache Storage
+      try {
+        if (self.caches && caches.keys) {
+          const names = await caches.keys();
+          await Promise.allSettled(names.map(n => caches.delete(n)));
+        }
+      } catch(_){}
+
+      // 4) Service Workers
+      try {
+        if (navigator.serviceWorker) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.allSettled(regs.map(r => r.unregister()));
+        }
+      } catch(_){}
+
+      // 5) Guard
+      try { sessionStorage.setItem('dummys_boot_clean_done_v1','1'); } catch(_){}
+    }
+
+    async function hardResetNow() {
+      if (window.__DUMMYS_RESET_RUNNING__) return;
+      window.__DUMMYS_RESET_RUNNING__ = true;
+
+      // Activa modo limpio antes (solo como bandera visual de arranque limpio)
+      try { localStorage.setItem(CLEAN_KEY, '1'); } catch {}
+
+      await deepClearWebData();
+
+      try { localStorage.setItem(BUMP_KEY, String(Date.now())); } catch(_){}
+
+      const url = new URL(location.href);
+      url.searchParams.set('_nuke', Date.now().toString());
+      for (const k of ['restore','reset','clean','noclean','safe']) url.searchParams.delete(k);
+      location.replace(url.toString());
+    }
+
+    // El botón BORRAR DATOS hace RESET TOTAL
+    $('btn-borrar').addEventListener('click', async () => {
+      if (!confirm('Se borrará TODO (LS/SS/IndexedDB/Cache/SW) y se reiniciará la app. ¿Continuar?')) return;
+      if (navigator.vibrate) navigator.vibrate(40);
+      await hardResetNow();
     });
 
     /* ===== Pantalla completa persistente (parche) ===== */
@@ -564,83 +715,11 @@
       try{ localStorage.setItem(CURSOR_KEY, visible ? "1" : "0"); }catch(e){}
     }
 
-    /* ===================== RESET TOTAL (BORRAR DATOS) ===================== */
-    const DUMMYS_KEYS = [
-      'dummys_rel_paths_master_v2','dummys_rel_paths_v4','dummys_rel_paths_v3',
-      'dummys_rel_paths_v2','dummys_rel_paths',
-      'dummys_clean_mode_v1','dummys_snapshot_v1','dummys_catalog_bump',
-      'dummys_cursor_visible'
-    ];
-    const BUMP_KEY  = 'dummys_catalog_bump';
-
-    async function deepClearWebData() {
-      try { window.__DUMMYS_NUKE__ = true; } catch(_){}
-
-      // 1) Local/Session Storage
-      try { for (const k of DUMMYS_KEYS) localStorage.removeItem(k); localStorage.clear(); } catch(_){}
-      try { sessionStorage.clear(); } catch(_){}
-
-      // 2) IndexedDB
-      try {
-        if (indexedDB.databases) {
-          const dbs = await indexedDB.databases();
-          if (Array.isArray(dbs)) {
-            await Promise.allSettled(dbs.map(db => { try { return indexedDB.deleteDatabase(db.name); } catch(_) {} }));
-          }
-        } else {
-          // indexedDB.deleteDatabase('dummys-db'); // añade nombres fijos si los tienes
-        }
-      } catch(_){}
-
-      // 3) Cache Storage
-      try {
-        if (self.caches && caches.keys) {
-          const names = await caches.keys();
-          await Promise.allSettled(names.map(n => caches.delete(n)));
-        }
-      } catch(_){}
-
-      // 4) Service Workers
-      try {
-        if (navigator.serviceWorker) {
-          const regs = await navigator.serviceWorker.getRegistrations();
-          await Promise.allSettled(regs.map(r => r.unregister()));
-        }
-      } catch(_){}
-
-      // 5) Guard para evitar bucles
-      try { sessionStorage.setItem('dummys_boot_clean_done_v1','1'); } catch(_){}
-    }
-
-    async function hardResetNow() {
-      if (window.__DUMMYS_RESET_RUNNING__) return;
-      window.__DUMMYS_RESET_RUNNING__ = true;
-
-      // Activa modo limpio antes para bloquear escrituras accidentales
-      try { localStorage.setItem(CLEAN_KEY, '1'); } catch {}
-
-      await deepClearWebData();
-
-      try { localStorage.setItem(BUMP_KEY, String(Date.now())); } catch(_){}
-
-      const url = new URL(location.href);
-      url.searchParams.set('_nuke', Date.now().toString());
-      for (const k of ['restore','reset','clean','noclean','safe']) url.searchParams.delete(k);
-      location.replace(url.toString());
-    }
-
-    // El botón BORRAR DATOS hace RESET TOTAL
-    document.getElementById('btn-borrar').addEventListener('click', async () => {
-      if (!confirm('Se borrará TODO (LS/SS/IndexedDB/Cache/SW) y se reiniciará la app. ¿Continuar?')) return;
-      if (navigator.vibrate) navigator.vibrate(40);
-      await hardResetNow();
-    });
-
     /* ====== INIT ====== */
     document.addEventListener("DOMContentLoaded", ()=>{
       _armFullscreenPersistence();
 
-      // Si el modo limpio está activo, garantir estado vacío visual
+      // Si el modo limpio está activo, deja visualmente vacío
       try{
         if(localStorage.getItem(CLEAN_KEY)==='1'){
           localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
@@ -648,6 +727,9 @@
           saveLinea('');
         }
       }catch(e){}
+
+      // Si no hay datos y no estamos en limpio, intenta restaurar el último
+      restoreSnapshotIfEmpty();
 
       const list=readStored();
       render(list);
@@ -677,7 +759,7 @@
     });
     window.addEventListener("keyup", (e)=>{ pressedKeys.delete(e.key.toLowerCase()); });
 
-    // Atajos extra (opcionales): Shift+Alt+X reset
+    // Atajo opcional: Shift+Alt+X reset total
     window.addEventListener('keydown', (e)=>{
       if(!(e.shiftKey && e.altKey)) return;
       const k=e.key.toLowerCase();
