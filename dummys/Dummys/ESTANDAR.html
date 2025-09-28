@@ -61,7 +61,7 @@
 
     .feedback-message{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#4CAF50;color:#fff;padding:10px 20px;border-radius:5px;display:none;transition:opacity .5s;z-index:9999}
 
-    .confirm-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:9998}
+    .confirm-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9998}
     .confirm-card{width:min(520px,92%);background:#fff;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.35);border:2px solid rgba(0,0,0,.1);padding:18px 16px;text-align:center}
     .confirm-title{margin:0 0 8px;font-size:20px;font-weight:900;color:#111}
     .confirm-sub{margin:0 0 14px;font-weight:700;color:#333}
@@ -146,7 +146,6 @@
     </div>
   </div>
 
-
 <script>
 /* ====== Bloqueos tipo kiosko ====== */
 window.addEventListener('contextmenu', e => e.preventDefault());
@@ -196,13 +195,10 @@ function autoFS(){
 }
 document.addEventListener('DOMContentLoaded', autoFS);
 
-/* ====== (NUEVO) Persistencia compartida con el Menú ====== */
-const STORAGE_KEY  = 'dummys_rel_paths_master_v2';
-const CLEAN_KEY    = 'dummys_clean_mode_v1';
-const SNAPSHOT_KEY = 'dummys_snapshot_data_v1';
-const SAVED_FLAG   = 'dummys_saved_ok_v1';
-
-/* Utilidades mínimas para leer catálogo/snapshot */
+/* ====== Utilidades ====== */
+function clamp9(n){ n=parseInt(n,10); if(isNaN(n)) n=0; return Math.max(0, Math.min(9, n)); }
+function qs(id){ return document.getElementById(id); }
+function deaccent(s){ return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
 function normalizeRelPath(p){
   let s=String(p||'').trim().replace(/^["']+|["']+$/g,'');
   s=s.replace(/\\/g,'/').replace(/^\/+/, '');
@@ -210,67 +206,6 @@ function normalizeRelPath(p){
   s=s.replace(/\/{2,}/g,'/');
   return s;
 }
-function readStored(){
-  try{
-    if(localStorage.getItem(CLEAN_KEY)==='1') return [];
-    const arr=JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]')||[];
-    return Array.from(new Set(arr.map(normalizeRelPath)));
-  }catch{return[]}
-}
-/* Si hay snapshot válido y no está en modo limpio, lo copia a STORAGE_KEY */
-function ensureCatalogFromSnapshot(){
-  try{
-    if(localStorage.getItem(CLEAN_KEY)==='1'){
-      localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
-      return false;
-    }
-    const hasSaved = localStorage.getItem(SAVED_FLAG)==='1';
-    const snap = localStorage.getItem(SNAPSHOT_KEY);
-    if(hasSaved && snap){
-      localStorage.setItem(STORAGE_KEY, snap);
-    }
-  }catch(e){}
-  return (readStored().length>0);
-}
-/* Overlay de “no hay datos” */
-function showNoDataOverlay(msg){
-  const ov=document.createElement('div');
-  ov.style.position='fixed';
-  ov.style.inset='0';
-  ov.style.background='rgba(0,0,0,.55)';
-  ov.style.display='flex';
-  ov.style.flexDirection='column';
-  ov.style.alignItems='center';
-  ov.style.justifyContent='center';
-  ov.style.zIndex='999999';
-
-  const card=document.createElement('div');
-  card.style.background='rgba(255,255,255,.97)';
-  card.style.border='2px solid rgba(0,0,0,.15)';
-  card.style.borderRadius='16px';
-  card.style.boxShadow='0 12px 30px rgba(0,0,0,.35)';
-  card.style.padding='22px 20px';
-  card.style.width='min(520px,92%)';
-  card.style.textAlign='center';
-  card.innerHTML = `
-    <div style="font-size:22px;font-weight:900;margin-bottom:6px">Sin datos cargados</div>
-    <div style="font-size:15px;color:#333;margin-bottom:14px">${msg||'Usa CONFIGURACIÓN en el Menú para seleccionar carpeta y GUARDAR.'}</div>
-    <a href="menu-principal.html" style="display:inline-block;padding:10px 16px;border-radius:10px;border:2px solid #000;background:#ffeb3b;font-weight:900;text-decoration:none;color:#000">Volver al Menú</a>
-  `;
-  ov.appendChild(card);
-  document.body.appendChild(ov);
-
-  // Bloquear gestos básicos sobre el overlay
-  window.addEventListener('contextmenu',e=>e.preventDefault());
-  window.addEventListener('dragstart', e=>e.preventDefault());
-  window.addEventListener('selectstart', e=>e.preventDefault());
-  window.addEventListener('wheel', e=>{ e.preventDefault(); }, {passive:false});
-}
-
-/* ====== Utilidades varias de esta página ====== */
-function clamp9(n){ n=parseInt(n,10); if(isNaN(n)) n=0; return Math.max(0, Math.min(9, n)); }
-function qs(id){ return document.getElementById(id); }
-function deaccent(s){ return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
 
 /* ====== Hash (LABEL, LINEA, COLOR HEX) ====== */
 function splitHash(){
@@ -312,13 +247,15 @@ function leer(tipo,label){
 function writeUnified(tipo,label,val){
   const std = String(label||'').toUpperCase();
   localStorage.setItem(ckey(tipo,label), String(val));
-  localStorage.setItem(`${tipo}-${std}`, String(val));
+  localStorage.setItem(`${tipo}-${std}`, String(val)); // compat
   try{ localStorage.setItem('dummys_counts_bump', String(Date.now())); }catch(e){}
 }
 
 /* ====== Resolución de imagen ====== */
 const EXTS = ['jpg','jpeg','png','JPG','JPEG','PNG'];
 function readStoredList(){
+  // Si está en limpio, devolvemos vacío (protección)  // <<< CAMBIO
+  try { if (localStorage.getItem('dummys_clean_mode_v1')==='1') return []; } catch {}
   try {
     const arr = JSON.parse(localStorage.getItem('dummys_rel_paths_master_v2')||'[]') || [];
     return Array.from(new Set(arr.map(normalizeRelPath)));
@@ -419,12 +356,10 @@ function cambiar(tipo, delta){
   cambiar._t = setTimeout(()=> f.style.display = 'none', 1200);
 }
 function setPanelColor(){
-  if (COLOR && isHexColor(COLOR)){
-    document.documentElement.style.setProperty('--panel-bg', COLOR);
-    try{ localStorage.setItem('dummys_last_color', COLOR); }catch(e){}
-  } else {
-    const saved = localStorage.getItem(`dummys_color_for_${LABEL}`);
-    if (saved && isHexColor(saved)) document.documentElement.style.setProperty('--panel-bg', saved);
+  const hex = (COLOR && isHexColor(COLOR)) ? COLOR : (localStorage.getItem(`dummys_color_for_${LABEL}`)||'');
+  if (hex && isHexColor(hex)){
+    document.documentElement.style.setProperty('--panel-bg', hex);
+    try{ localStorage.setItem('dummys_last_color', hex); }catch(e){}
   }
 }
 function buildPizarronHref(){
@@ -516,20 +451,20 @@ function updatePowerUI(){
 }
 function togglePower(){ sleeping=!sleeping; updatePowerUI(); }
 
-/* ====== Carga inicial (con guardado/restauración) ====== */
+/* ====== Carga inicial con protección de MODO LIMPIO ====== */
 document.addEventListener('DOMContentLoaded', ()=>{
-  // 1) Intentar restaurar catálogo desde snapshot (si no está en modo limpio)
-  const hasData = ensureCatalogFromSnapshot();
-
-  // 2) Si no hay datos, mostrar overlay y abortar inicialización
-  if(!hasData){
-    showNoDataOverlay('No hay estándares cargados. En el Menú: SELECCIONAR CARPETA y luego GUARDAR.');
+  // Si está en modo limpio, aseguramos catálogo vacío y volvemos al menú  // <<< CAMBIO
+  if (localStorage.getItem('dummys_clean_mode_v1') === '1') {
+    try { localStorage.setItem('dummys_rel_paths_master_v2', JSON.stringify([])); } catch(e){}
+    location.href='menu-principal.html';
     return;
   }
 
-  // 3) Con datos listos, continuar inicialización normal
   ['centenas','decenas','unidades'].forEach(t=> qs(t).textContent = leer(t, LABEL||'DEFAULT'));
-  if(LABEL){ const urls=buildImageCandidates(LABEL, LINEA, COLOR); setImageWithFallback(urls); }
+  if(LABEL){
+    const urls=buildImageCandidates(LABEL, LINEA, COLOR);
+    setImageWithFallback(urls);
+  }
   setPanelColor();
   const a=document.querySelector('#toPizarron'); if(a){ a.href=buildPizarronHref(); }
   setupConfirmReturn();

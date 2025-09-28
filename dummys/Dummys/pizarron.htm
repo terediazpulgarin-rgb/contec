@@ -251,74 +251,11 @@
     }
     document.addEventListener('DOMContentLoaded', autoFS);
 
-    /* ====== (NUEVO) Persistencia compartida con el Menú ====== */
-    const STORAGE_KEY  = 'dummys_rel_paths_master_v2';
-    const CLEAN_KEY    = 'dummys_clean_mode_v1';
-    const SNAPSHOT_KEY = 'dummys_snapshot_data_v1';
-    const SAVED_FLAG   = 'dummys_saved_ok_v1';
-
-    function normalizeRelPath(p){
-      p=String(p||'').trim().replace(/^["']+|["']+$/g,'').replace(/\\/g,'/');
-      const low=p.toLowerCase(); const i=low.lastIndexOf('dummys/'); if(i>=0){ p=p.substring(i); if(p.startsWith('/')) p=p.slice(1); }
-      return p;
-    }
-    function readStored(){
-      try{
-        if(localStorage.getItem(CLEAN_KEY)==='1') return [];
-        const arr=JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]')||[];
-        return Array.from(new Set(arr.map(normalizeRelPath)));
-      }catch{return[]}
-    }
-    function ensureCatalogFromSnapshot(){
-      try{
-        if(localStorage.getItem(CLEAN_KEY)==='1'){
-          localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
-          return false;
-        }
-        const hasSaved = localStorage.getItem(SAVED_FLAG)==='1';
-        const snap = localStorage.getItem(SNAPSHOT_KEY);
-        if(hasSaved && snap){
-          localStorage.setItem(STORAGE_KEY, snap);
-        }
-      }catch(e){}
-      return (readStored().length>0);
-    }
-    function showNoDataOverlay(msg){
-      const ov=document.createElement('div');
-      ov.style.position='fixed';
-      ov.style.inset='0';
-      ov.style.background='rgba(0,0,0,.55)';
-      ov.style.display='flex';
-      ov.style.flexDirection='column';
-      ov.style.alignItems='center';
-      ov.style.justifyContent='center';
-      ov.style.zIndex='999999';
-      const card=document.createElement('div');
-      card.style.background='rgba(255,255,255,.97)';
-      card.style.border='2px solid rgba(0,0,0,.15)';
-      card.style.borderRadius='16px';
-      card.style.boxShadow='0 12px 30px rgba(0,0,0,.35)';
-      card.style.padding='22px 20px';
-      card.style.width='min(520px,92%)';
-      card.style.textAlign='center';
-      card.innerHTML = `
-        <div style="font-size:22px;font-weight:900;margin-bottom:6px">Sin datos cargados</div>
-        <div style="font-size:15px;color:#333;margin-bottom:14px">${msg||'Usa CONFIGURACIÓN en el Menú para seleccionar carpeta y GUARDAR.'}</div>
-        <a href="menu-principal.html" style="display:inline-block;padding:10px 16px;border-radius:10px;border:2px solid #000;background:#ffeb3b;font-weight:900;text-decoration:none;color:#000">Volver al Menú</a>
-      `;
-      ov.appendChild(card);
-      document.body.appendChild(ov);
-
-      window.addEventListener('contextmenu',e=>e.preventDefault());
-      window.addEventListener('dragstart', e=>e.preventDefault());
-      window.addEventListener('selectstart', e=>e.preventDefault());
-      window.addEventListener('wheel', e=>{ e.preventDefault(); }, {passive:false});
-    }
-
-    /* =================== LÓGICA ORIGINAL =================== */
+    /* =================== LÓGICA ORIGINAL + MODO LIMPIO =================== */
     const STORAGE_KEYS=['dummys_rel_paths_master_v2','dummys_rel_paths_v4','dummys_rel_paths_v3','dummys_rel_paths_v2','dummys_rel_paths'];
     const STD_PAGE='ESTANDAR.html';
     const DONE_PREFIX='dummys_done__';
+    const CLEAN_KEY='dummys_clean_mode_v1'; // <<< CAMBIO
     const $=(s)=>document.querySelector(s);
     const elBtns=$('#btns'), elPanel=$('#panel'), elHeader=$('#modeloHeader');
     const elCounters=document.querySelector('.contador-container');
@@ -328,13 +265,17 @@
     const overlayPlan=$('#overlayPlan'), planList=$('#planList');
     const PLAN_KEY='dummys_plan_v1';
 
+    function normalizeRelPath(p){
+      p=String(p||'').trim().replace(/^["']+|["']+$/g,'').replace(/\\/g,'/');
+      const low=p.toLowerCase(); const i=low.lastIndexOf('dummys/'); if(i>=0){ p=p.substring(i); if(p.startsWith('/')) p=p.slice(1); }
+      return p;
+    }
     function filenameWithoutExt(path){const base=String(path).split('/').pop().toUpperCase();return base.replace(/\.(HTML?|HTM|JPE?G|PNG)$/,'');}
     function naturalCompare(a,b){
       const an=a.toUpperCase(),bn=b.toUpperCase(),rx=/(\d+)|(\D+)/g;
-      const aa=an.match(rx)||[],bb=bn.match(rx)||[];
+      const aa=an.match(rx)||[],bb=bn.match(rx)||[]; 
       for(let i=0;i<Math.max(aa.length,bb.length);i++){
-        const x=aa[i]||'',y=bb[i]||'';
-        const nx=parseInt(x,10),ny=parseInt(y,10);
+        const x=aa[i]||'',y=bb[i]||'';const nx=parseInt(x,10),ny=parseInt(y,10);
         if(!isNaN(nx)&&!isNaN(ny)){if(nx!==ny)return nx-ny;}else if(x!==y){return x.localeCompare(y);}
       }
       return an.localeCompare(bn);
@@ -392,6 +333,8 @@
     }
 
     function readStoredAny(){
+      // <<< CAMBIO: si está en modo limpio, devolvemos lista vacía
+      if (localStorage.getItem(CLEAN_KEY) === '1') return [];
       let merged=[];
       for(const k of STORAGE_KEYS){
         try{
@@ -401,6 +344,7 @@
       }
       return Array.from(new Set((merged||[]).map(normalizeRelPath).filter(Boolean)));
     }
+
     function colorStoredFor(idKeyOrFull){
       return localStorage.getItem(`dummys_color_for_${String(idKeyOrFull||'').toUpperCase()}`) || null;
     }
@@ -614,10 +558,7 @@
       refreshBadgeFor(ACTUAL.label);
       feedback(`Contadores de ${ACTUAL.label} limpiados`);
     }
-    document.addEventListener('DOMContentLoaded', ()=> {
-      const btnUno=document.getElementById('btnLimpiarUno');
-      if(btnUno) btnUno.addEventListener('click', clearCurrentCounters);
-    });
+    document.getElementById('btnLimpiarUno').addEventListener('click', clearCurrentCounters);
 
     function clearAllCounters(){
       if(!confirm('¿Limpiar contadores de TODOS los modelos?')) return;
@@ -639,10 +580,7 @@
       refreshAllBadges();
       feedback('Todos los contadores fueron limpiados');
     }
-    document.addEventListener('DOMContentLoaded', ()=>{
-      const btnTodo=document.getElementById('btnLimpiarTodo');
-      if(btnTodo) btnTodo.addEventListener('click', clearAllCounters);
-    });
+    document.getElementById('btnLimpiarTodo').addEventListener('click', clearAllCounters);
 
     function feedback(msg){
       const elFeedback=document.getElementById('feedback');
@@ -696,10 +634,7 @@
         location.href=`${STD_PAGE}#${parts.join(',')}`;
       };
     }
-    document.addEventListener('DOMContentLoaded', ()=>{
-      const btnPlan=document.getElementById('btnPlan');
-      if(btnPlan) btnPlan.addEventListener('click', abrirPlan);
-    });
+    document.getElementById('btnPlan').addEventListener('click', abrirPlan);
 
     window.addEventListener('storage',(e)=>{
       if(!e.key) return;
@@ -727,6 +662,14 @@
     });
 
     function refreshModelsFromStorage(){
+      // <<< CAMBIO: si está en limpio, no pintamos nada
+      if (localStorage.getItem(CLEAN_KEY) === '1') {
+        if (elBtns) elBtns.innerHTML = '<div style="font-weight:700;padding:10px">Modo limpio activo. Carga una carpeta desde el MENÚ.</div>'; // mensaje claro
+        if (elPanel) elPanel.style.display='none';
+        try { localStorage.setItem('dummys_rel_paths_master_v2', JSON.stringify([])); } catch {}
+        MODELOS=[]; ACTUAL=null;
+        return;
+      }
       MODELOS = buildModels();
       pintarBotones();
       if(!MODELOS.length){ elPanel.style.display='none'; ACTUAL=null; return; }
@@ -735,27 +678,19 @@
       mostrarModelo(pre);
     }
 
-    /* ====== CARGA INICIAL CON GUARD SNAPSHOT/MODO LIMPIO ====== */
-    document.addEventListener('DOMContentLoaded', ()=>{
-      const hasData = ensureCatalogFromSnapshot();
-      if(!hasData){
-        showNoDataOverlay('No hay D/R cargados. En el Menú: SELECCIONAR CARPETA y luego GUARDAR.');
-        return; // aborta setup de pizarrón si no hay datos válidos
+    document.addEventListener('DOMContentLoaded', refreshModelsFromStorage);
+
+    setInterval(()=>{
+      if(ACTUAL){
+        ['centenas','decenas','unidades'].forEach(t=>{
+          const el=document.getElementById(`${t}-${ACTUAL.label}`);
+          if(!el) return;
+          const vStore=readCount(t,ACTUAL.label);
+          if(String(vStore)!==String(el.textContent||'0')) el.textContent=vStore;
+        });
+        refreshBadgeFor(ACTUAL.label);
       }
-      refreshModelsFromStorage();
-      // small sync keeper
-      setInterval(()=>{
-        if(ACTUAL){
-          ['centenas','decenas','unidades'].forEach(t=>{
-            const el=document.getElementById(`${t}-${ACTUAL.label}`);
-            if(!el) return;
-            const vStore=readCount(t,ACTUAL.label);
-            if(String(vStore)!==String(el.textContent||'0')) el.textContent=vStore;
-          });
-          refreshBadgeFor(ACTUAL.label);
-        }
-      }, 1000);
-    });
+    }, 1000);
   </script>
 </body>
 </html>
