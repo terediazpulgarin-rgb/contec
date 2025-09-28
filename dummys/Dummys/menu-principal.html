@@ -154,7 +154,12 @@
     window.addEventListener('gesturestart', e => e.preventDefault());
     window.addEventListener('wheel', e => { e.preventDefault(); }, {passive:false});
 
-    const LISTA_ID='lista-dummys', STORAGE_KEY='dummys_rel_paths_master_v2', LINEA_KEY='dummys_linea_actual_v10', MODE_KEY='dummys_modo_vista_v8';
+    const LISTA_ID='lista-dummys',
+          STORAGE_KEY='dummys_rel_paths_master_v2',
+          LINEA_KEY='dummys_linea_actual_v10',
+          MODE_KEY='dummys_modo_vista_v8',
+          CLEAN_KEY='dummys_clean_mode_v1';   // <<<<<< MODO LIMPIO PERSISTENTE
+
     const STD_PAGE='ESTANDAR.html';
     const $=(id)=>document.getElementById(id);
     let modoVista=readMode()||'D', lineaActual=readLinea()||'';
@@ -201,7 +206,14 @@
 
     function canonLinea(s){ return String(s||'').trim().toUpperCase(); }
 
-    function readStored(){try{const arr=JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]')||[];return Array.from(new Set(arr.map(normalizeRelPath)));}catch{return[]}}
+    function readStored(){
+      try{
+        // Si está en modo limpio, devolver vacío SIEMPRE
+        if(localStorage.getItem(CLEAN_KEY)==='1') return [];
+        const arr=JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]')||[];
+        return Array.from(new Set(arr.map(normalizeRelPath)));
+      }catch{return[]}
+    }
     function saveLinea(v){try{localStorage.setItem(LINEA_KEY, canonLinea(v||''))}catch{}}
     function readLinea(){try{return canonLinea(localStorage.getItem(LINEA_KEY)||'')}catch{return''}}
     function saveMode(v){try{localStorage.setItem(MODE_KEY,v)}catch{}}
@@ -424,27 +436,29 @@
 
     function bumpCatalog(){try{localStorage.setItem('dummys_catalog_bump',String(Date.now()));}catch(e){}}
 
-    /* ==== BOTÓN BORRAR: limpieza manual (persiste hasta que tú borres) ==== */
+    /* ==== BOTÓN BORRAR: limpieza manual que persiste hasta que cargues de nuevo ==== */
     $('btn-borrar').addEventListener('click', async () => {
       if (!confirm('Se borrarán TODOS los datos locales (tus archivos NO se borran). ¿Continuar?')) return;
 
-      // 1) Storages
-      try { localStorage.clear(); } catch {}
-      try { sessionStorage.clear(); } catch {}
+      // 0) Poner el modo limpio ANTES de tocar nada
+      try { localStorage.setItem(CLEAN_KEY, '1'); } catch {}
 
-      // 2) Por si quedan claves sueltas
+      // 1) Borrar claves salvo el flag de modo limpio
       try {
-        const STORAGE_KEY='dummys_rel_paths_master_v2';
-        const LINEA_KEY  ='dummys_linea_actual_v10';
-        const MODE_KEY   ='dummys_modo_vista_v8';
-        const extras = [];
+        const toDelete = [];
         for (let i=0;i<localStorage.length;i++){
           const k = localStorage.key(i);
           if (!k) continue;
-          if (k.startsWith('dummys_') || k===STORAGE_KEY || k===LINEA_KEY || k===MODE_KEY) extras.push(k);
+          if (k === CLEAN_KEY) continue; // conservamos el flag
+          toDelete.push(k);
         }
-        extras.forEach(k => localStorage.removeItem(k));
+        toDelete.forEach(k => localStorage.removeItem(k));
+        // Forzamos STORAGE_KEY vacío (por seguridad)
+        localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
       } catch {}
+
+      // 2) sessionStorage
+      try { sessionStorage.clear(); } catch {}
 
       // 3) Cache Storage + Service Workers (mismo origen)
       if ('caches' in window) {
@@ -455,16 +469,16 @@
       }
 
       // 4) Reset UI
-      try { localStorage.setItem('dummys_catalog_bump', String(Date.now())); } catch {}
+      bumpCatalog();
       render([]);
       const estado = $('estado');
-      if (estado) estado.textContent = 'Datos borrados correctamente. Usa CONFIGURACIÓN.';
+      if (estado) estado.textContent = 'Datos borrados. (Modo limpio activo) Usa CONFIGURACIÓN para cargar.';
       $('dirInput').value = '';
       lineaActual = '';
       saveLinea('');
     });
 
-    /* ==== Selección de carpeta: REEMPLAZA lo anterior y limpia hints viejos ==== */
+    /* ==== Selección de carpeta: REEMPLAZA lo anterior y desactiva modo limpio ==== */
     function handleFileList(fileList){
       const files = Array.from(fileList || []);
       let rels = [], ignorados = 0;
@@ -478,11 +492,13 @@
         rels.push(rel);
       });
 
-      // ÚNICOS
       rels = Array.from(new Set(rels));
 
-      // Guardar SOLO la nueva selección (reemplaza)
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(rels)); } catch {}
+      try {
+        // Desactivar modo limpio al cargar algo nuevo
+        localStorage.setItem(CLEAN_KEY, '0');
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(rels));
+      } catch {}
 
       // Limpiar hints/colores que no apliquen a la nueva selección
       try {
@@ -524,7 +540,6 @@
             }
           }
         }
-        // limpiar last_color para no arrastrarlo
         keysToDelete.push('dummys_last_color');
         keysToDelete.forEach(k => localStorage.removeItem(k));
       } catch(e){ console.warn('No se pudieron limpiar hints antiguos:', e); }
@@ -636,6 +651,15 @@
 
     document.addEventListener("DOMContentLoaded", ()=>{
       _armFullscreenPersistence();
+
+      // Si el modo limpio está activo, garantizamos estado vacío
+      try{
+        if(localStorage.getItem(CLEAN_KEY)==='1'){
+          localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
+          lineaActual='';
+          saveLinea('');
+        }
+      }catch(e){}
 
       const list=readStored();
       render(list);
