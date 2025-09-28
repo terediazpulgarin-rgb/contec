@@ -36,17 +36,25 @@
     .botones-container {
       position: absolute; bottom: 100px; width: 100%;
       display: flex; justify-content: space-between; padding: 0 50px; box-sizing: border-box;
+      gap: 20px;
     }
 
     .boton {
       background: #e1dcdc; color: #333; border: none; text-align: center; cursor: pointer;
       border-radius: 12px; box-shadow: 0 6px 12px rgba(0,0,0,.3); transition: .25s ease; font-weight: bold;
       text-decoration: none; font-size: 60px; width: 400px; height: 180px; display:flex; align-items:center; justify-content:center;
-      padding: 0 20px; line-height: 1.2;
+      padding: 0 20px; line-height: 1.2; user-select:none;
     }
     .boton:hover { opacity:.9; transform: translateY(-4px); box-shadow: 0 10px 18px rgba(0,0,0,.35); }
     .boton:active { transform: translateY(0); }
     .boton.disabled { filter: grayscale(1); opacity: .55; cursor: not-allowed; box-shadow: 0 3px 8px rgba(0,0,0,.25); transform: none !important; }
+
+    /* Estilo del botón rojo de reset total */
+    .boton.danger {
+      background: #b00020; color: #fff;
+      box-shadow: 0 6px 12px rgba(176,0,32,.35);
+    }
+    .boton.danger:hover { box-shadow: 0 10px 18px rgba(176,0,32,.5); }
 
     @media (max-width: 768px) {
       .top-bar { top:30px; left:30px; right:30px; flex-direction:column; align-items:center; gap:20px; }
@@ -66,19 +74,64 @@
 
   <div class="botones-container">
     <a href="Dummys/menu-principal.html" class="boton" draggable="false">MENU<br>PRINCIPAL</a>
+
     <a id="btnPizarron" href="Dummys/pizarron.htm" class="boton disabled" draggable="false" aria-disabled="true"
        title="Carga estándares en el MENÚ para activar">PIZARRON</a>
+
+    <!-- NUEVO: Botón Reset Total -->
+    <a id="btnResetTotal" href="#" class="boton danger" draggable="false" title="Borrar datos y reiniciar la app">
+      RESET<br>TOTAL
+    </a>
   </div>
 
   <script>
-    /* ===== Cursor oculto con C+R ===== */
-    const CURSOR_KEY = "dummys_cursor_visible";
-    function applyCursorState(visible){
-      if(visible){ document.body.classList.remove("no-cursor"); }
-      else{ document.body.classList.add("no-cursor"); }
-      try{ localStorage.setItem(CURSOR_KEY, visible ? "1" : "0"); }catch(e){}
+  /*** === 0) MODO SEGURO POR URL (?safe=1) === ***/
+  const SAFE_MODE = /[?&#]safe=1\b/.test(location.href);
+
+  /*** === 1) OVERLAY DE ERRORES (ver qué pasó si queda en blanco) === ***/
+  (function errorOverlayInit(){
+    const css = `
+      #errOverlay{position:fixed;inset:0;background:rgba(0,0,0,.85);color:#fff;z-index:99999;
+        font-family:monospace;display:none;padding:16px;overflow:auto}
+      #errOverlay h3{margin:0 0 8px 0;font-size:18px}
+      #errOverlay pre{white-space:pre-wrap;word-break:break-word;font-size:14px;line-height:1.35}
+      #errOverlay .btns{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap}
+      #errOverlay button{background:#ffd54f;border:0;border-radius:6px;padding:8px 12px;font-weight:700;cursor:pointer}
+    `;
+    const style = document.createElement('style'); style.textContent = css; document.head.appendChild(style);
+    const box = document.createElement('div'); box.id='errOverlay';
+    box.innerHTML = `<h3>⚠️ Error de script</h3><pre id="errMsg"></pre>
+    <div class="btns">
+      <button id="btnClose">Cerrar</button>
+      <button id="btnClearLS">Borrar local/sessionStorage</button>
+      <button id="btnReload">Recargar</button>
+    </div>`;
+    document.body.appendChild(box);
+    box.querySelector('#btnClose').onclick=()=>box.style.display='none';
+    box.querySelector('#btnClearLS').onclick=()=>{ try{localStorage.clear();sessionStorage.clear();}catch{}; location.reload(); };
+    box.querySelector('#btnReload').onclick=()=>location.reload();
+
+    function showError(msg){
+      const pre = document.getElementById('errMsg');
+      if(pre){ pre.textContent = String(msg || 'Error desconocido'); box.style.display='block'; }
     }
-    document.addEventListener("DOMContentLoaded", ()=>{ applyCursorState(false); });
+    window.addEventListener('error', (e)=>{ showError(`${e.message}\n\n${e.filename}:${e.lineno}:${e.colno}\n${e.error && e.error.stack ? e.error.stack : ''}`); });
+    window.addEventListener('unhandledrejection', (e)=>{ showError(`Promise rejection: ${e.reason && (e.reason.stack || e.reason)}`); });
+  })();
+
+  /*** === 2) UTILS === ***/
+  function tryLS(fn){ try{ return fn(); }catch(_){ return null; } }
+  function onReady(fn){ if(document.readyState!=='loading') fn(); else document.addEventListener('DOMContentLoaded', fn); }
+
+  /*** === 3) CURSOR (C+R alterna) === ***/
+  const CURSOR_KEY = "dummys_cursor_visible";
+  function applyCursorState(visible){
+    if(visible){ document.body.classList.remove("no-cursor"); }
+    else{ document.body.classList.add("no-cursor"); }
+    tryLS(()=>localStorage.setItem(CURSOR_KEY, visible ? "1" : "0"));
+  }
+  onReady(()=>{ if(!SAFE_MODE) applyCursorState(false); });
+  {
     const pressedKeys = new Set();
     window.addEventListener("keydown", (e)=>{
       pressedKeys.add(e.key.toLowerCase());
@@ -88,66 +141,173 @@
       }
     });
     window.addEventListener("keyup",(e)=>{ pressedKeys.delete(e.key.toLowerCase()); });
+  }
 
-    /* ===== Pantalla completa persistente ===== */
-    const FS_FLAG='dummys_fs_intent';
-    const docEl=document.documentElement;
-    function isFS(){return !!(document.fullscreenElement||document.webkitFullscreenElement||document.mozFullScreenElement||document.msFullscreenElement);}
-    function reqFS(){const r=docEl.requestFullscreen||docEl.webkitRequestFullscreen||docEl.mozRequestFullScreen||docEl.msRequestFullscreen; if(r) return r.call(docEl).catch(()=>{});}
-    function tryEnterFSImmediate(){reqFS();}
-    function markLeaving(){try{sessionStorage.setItem(FS_FLAG,'1');}catch(e){}}
-    function autoFSInit(){
-      if (sessionStorage.getItem(FS_FLAG)==='1' || /[?#&]fs=1\b/.test(location.href)) { tryEnterFSImmediate(); try{sessionStorage.removeItem(FS_FLAG);}catch(e){} }
-      const reenter=()=>{ if(!isFS()) tryEnterFSImmediate(); };
-      ['fullscreenchange','webkitfullscreenchange','mozfullscreenchange','MSFullscreenChange','visibilitychange'].forEach(evt=>document.addEventListener(evt,reenter));
-      window.addEventListener('pageshow', ()=>{ if (sessionStorage.getItem(FS_FLAG)==='1') { tryEnterFSImmediate(); try{sessionStorage.removeItem(FS_FLAG);}catch(e){} }});
-      document.addEventListener('click',(e)=>{
-        const a=e.target.closest && e.target.closest('a[href]'); if(!a) return;
-        const href=a.getAttribute('href'); if(!href || href.startsWith('javascript:') || href.startsWith('#')) return;
-        markLeaving();
-        try{ const url=new URL(href, location.href); url.searchParams.set('fs','1'); a.setAttribute('href', url.toString()); }catch(_){}
-      }, true);
+  /*** === 4) Pantalla completa persistente === ***/
+  const FS_FLAG='dummys_fs_intent';
+  const docEl=document.documentElement;
+  function isFS(){return !!(document.fullscreenElement||document.webkitFullscreenElement||document.mozFullScreenElement||document.msFullscreenElement);}
+  function reqFS(){const r=docEl.requestFullscreen||docEl.webkitRequestFullscreen||docEl.mozRequestFullScreen||docEl.msRequestFullscreen; if(r) return r.call(docEl).catch(()=>{});}
+  function tryEnterFSImmediate(){reqFS();}
+  function markLeaving(){tryLS(()=>sessionStorage.setItem(FS_FLAG,'1'));}
+  function autoFSInit(){
+    if (SAFE_MODE) return;
+    if (tryLS(()=>sessionStorage.getItem(FS_FLAG))==='1' || /[?#]fs=1\b/.test(location.href)) {
+      tryEnterFSImmediate(); tryLS(()=>sessionStorage.removeItem(FS_FLAG));
     }
-    document.addEventListener('DOMContentLoaded', autoFSInit);
+    const reenter=()=>{ if(!isFS()) tryEnterFSImmediate(); };
+    ['fullscreenchange','webkitfullscreenchange','mozfullscreenchange','MSFullscreenChange','visibilitychange'].forEach(evt=>document.addEventListener(evt,reenter));
+    window.addEventListener('pageshow', ()=>{ if (tryLS(()=>sessionStorage.getItem(FS_FLAG))==='1') { tryEnterFSImmediate(); tryLS(()=>sessionStorage.removeItem(FS_FLAG)); }});
+    document.addEventListener('click',(e)=>{
+      const a=e.target.closest && e.target.closest('a[href]'); if(!a) return;
+      const href=a.getAttribute('href'); if(!href || href.startsWith('javascript:') || href.startsWith('#')) return;
+      markLeaving();
+      try{ const url=new URL(href, location.href); url.searchParams.set('fs','1'); a.setAttribute('href', url.toString()); }catch(_){}
+    }, true);
+  }
+  onReady(autoFSInit);
 
-    /* ===== Habilitar Pizarrón si hay modelos ===== */
-    const STORAGE_KEYS=['dummys_rel_paths_master_v2','dummys_rel_paths_v4','dummys_rel_paths_v3','dummys_rel_paths_v2','dummys_rel_paths'];
-    const CLEAN_KEY='dummys_clean_mode_v1';
-    function normalizeRelPath(p){ p=String(p||'').trim().replace(/^["']+|["']+$/g,'').replace(/\\/g,'/'); const low=p.toLowerCase(); const i=low.lastIndexOf('dummys/'); if(i>=0){ p=p.substring(i); if(p.startsWith('/')) p=p.slice(1); } return p; }
-    function filenameNoExt(path){ const base=String(path).split('/').pop().toUpperCase(); return base.replace(/\.(HTML?|HTM|JPE?G|PNG)$/,''); }
-    function readStoredAny(){
-      if (localStorage.getItem(CLEAN_KEY)==='1') return [];
-      let merged=[]; for(const k of STORAGE_KEYS){ try{ const v=JSON.parse(localStorage.getItem(k)||'[]'); if(Array.isArray(v)&&v.length) merged=merged.concat(v);}catch{} }
-      return Array.from(new Set((merged||[]).map(normalizeRelPath).filter(Boolean)));
+  /*** === 5) Habilitar Pizarrón si hay modelos === ***/
+  const STORAGE_KEYS=['dummys_rel_paths_master_v2','dummys_rel_paths_v4','dummys_rel_paths_v3','dummys_rel_paths_v2','dummys_rel_paths'];
+  const CLEAN_KEY='dummys_clean_mode_v1';
+  const SNAP_KEY='dummys_snapshot_v1';
+  const BUMP_KEY='dummys_catalog_bump';
+
+  function normalizeRelPath(p){ p=String(p||'').trim().replace(/^["']+|["']+$/g,'').replace(/\\/g,'/'); const low=p.toLowerCase(); const i=low.lastIndexOf('dummys/'); if(i>=0){ p=p.substring(i); if(p.startsWith('/')) p=p.slice(1); } return p; }
+  function filenameNoExt(path){ const base=String(path).split('/').pop().toUpperCase(); return base.replace(/\.(HTML?|HTM|JPE?G|PNG)$/,''); }
+  function readStoredAny(){
+    if (tryLS(()=>localStorage.getItem(CLEAN_KEY))==='1') return [];
+    let merged=[]; for(const k of STORAGE_KEYS){ try{ const v=JSON.parse(tryLS(()=>localStorage.getItem(k))||'[]'); if(Array.isArray(v)&&v.length) merged=merged.concat(v);}catch{} }
+    return Array.from(new Set((merged||[]).map(normalizeRelPath).filter(Boolean)));
+  }
+  function hayModelos(){
+    const rels=readStoredAny();
+    for(const rel of rels){
+      const base=filenameNoExt(rel);
+      if(/^D[0-9O]{3,4}[A-Z]*\b/.test(base)) return true;
+      if(/\bR\d+\s*[-_–—]\s*(AVI|POLI)\b/.test(base)) return true;
     }
-    function hayModelos(){
-      const rels=readStoredAny();
-      for(const rel of rels){
-        const base=filenameNoExt(rel);
-        if(/^D[0-9O]{3,4}[A-Z]*\b/.test(base)) return true;
-        if(/\bR\d+\s*[-_–—]\s*(AVI|POLI)\b/.test(base)) return true;
+    return false;
+  }
+  const btnPizarron=document.getElementById('btnPizarron');
+  function refrescarEstadoPizarron(){
+    const activo=hayModelos();
+    if(activo){ btnPizarron.classList.remove('disabled'); btnPizarron.setAttribute('aria-disabled','false'); btnPizarron.title='Abrir Pizarrón'; }
+    else{ btnPizarron.classList.add('disabled'); btnPizarron.setAttribute('aria-disabled','true'); btnPizarron.title='Carga estándares en el MENÚ para activar'; }
+  }
+  btnPizarron.addEventListener('click', e=>{ if(btnPizarron.classList.contains('disabled')){ e.preventDefault(); if(navigator.vibrate) navigator.vibrate(30); }});
+  onReady(refrescarEstadoPizarron);
+  window.addEventListener('storage', (e)=>{ if(!e.key) return; if(e.key===BUMP_KEY || STORAGE_KEYS.includes(e.key) || e.key===CLEAN_KEY || e.key===SNAP_KEY) refrescarEstadoPizarron(); });
+  setInterval(refrescarEstadoPizarron, 1500);
+
+  /*** === 6) SNAPSHOT / RESTAURAR / RESET con guardias === ***/
+  function makeSnapshot(){
+    const payload={ keys:{}, ts: Date.now() };
+    for(const k of STORAGE_KEYS){ payload.keys[k] = tryLS(()=>localStorage.getItem(k)); }
+    payload.keys[BUMP_KEY]  = tryLS(()=>localStorage.getItem(BUMP_KEY))  ?? '';
+    payload.keys[CLEAN_KEY] = tryLS(()=>localStorage.getItem(CLEAN_KEY)) ?? '0';
+    tryLS(()=>localStorage.setItem(SNAP_KEY, JSON.stringify(payload)));
+  }
+  function applySnapshot(){
+    try{
+      const snapStr = tryLS(()=>localStorage.getItem(SNAP_KEY)); if(!snapStr) return false;
+      const snap = JSON.parse(snapStr||''); if(!snap || !snap.keys) return false;
+      for(const [k,v] of Object.entries(snap.keys)){
+        if(v===null || typeof v==='undefined'){ tryLS(()=>localStorage.removeItem(k)); }
+        else{ tryLS(()=>localStorage.setItem(k, v)); }
       }
-      return false;
+      tryLS(()=>localStorage.setItem(BUMP_KEY, String(Date.now())));
+      return true;
+    }catch(_){ return false; }
+  }
+  function hardResetNow(){
+    tryLS(()=>localStorage.clear());
+    tryLS(()=>sessionStorage.clear());
+    tryLS(()=>localStorage.setItem(BUMP_KEY, String(Date.now())));
+    // Guardia anti-bucle: no recargar más de 1 vez en 4s
+    const GUARD='dummys_reload_guard_v1';
+    const last=tryLS(()=>sessionStorage.getItem(GUARD));
+    const now=Date.now();
+    if(!last || (now - Number(last) > 4000)){
+      tryLS(()=>sessionStorage.setItem(GUARD, String(now)));
+      location.reload();
+    } else {
+      console.warn('Reload bloqueado por guardia anti-bucle.');
     }
-    const btnPizarron=document.getElementById('btnPizarron');
-    function refrescarEstadoPizarron(){
-      const activo=hayModelos();
-      if(activo){ btnPizarron.classList.remove('disabled'); btnPizarron.setAttribute('aria-disabled','false'); btnPizarron.title='Abrir Pizarrón'; }
-      else{ btnPizarron.classList.add('disabled'); btnPizarron.setAttribute('aria-disabled','true'); btnPizarron.title='Carga estándares en el MENÚ para activar'; }
-    }
-    btnPizarron.addEventListener('click', e=>{ if(btnPizarron.classList.contains('disabled')){ e.preventDefault(); if(navigator.vibrate) navigator.vibrate(30); }});
-    document.addEventListener('DOMContentLoaded', refrescarEstadoPizarron);
-    window.addEventListener('storage', (e)=>{ if(!e.key) return; if(e.key==='dummys_catalog_bump' || STORAGE_KEYS.includes(e.key) || e.key===CLEAN_KEY) refrescarEstadoPizarron(); });
-    setInterval(refrescarEstadoPizarron, 1500);
+  }
+  function toggleCleanMode(enable){
+    tryLS(()=>localStorage.setItem(CLEAN_KEY, enable ? '1' : '0'));
+    tryLS(()=>localStorage.setItem(BUMP_KEY, String(Date.now())));
+  }
 
-    /* Bloqueos básicos */
-    document.addEventListener('contextmenu', e=>e.preventDefault());
-    document.addEventListener('selectstart', e=>e.preventDefault());
-    document.addEventListener('dragstart',  e=>e.preventDefault());
-    window.addEventListener('keydown', (e)=> {
-      if ((e.ctrlKey||e.metaKey) && (['+','-','=','0'].includes(e.key))) e.preventDefault();
-      if (['F11'].includes(e.key)) e.preventDefault();
-    });
+  // Snapshot al salir (lo último usado)
+  window.addEventListener('beforeunload', ()=>{ if(!SAFE_MODE) makeSnapshot(); });
+
+  // Querystring helpers: ?reset=1|restore=1|clean=1|noclean=1
+  (function handleQS(){
+    if(SAFE_MODE) return;
+    try{
+      const url=new URL(location.href);
+      if(url.searchParams.get('reset')==='1'){ hardResetNow(); return; }
+      if(url.searchParams.get('restore')==='1'){ if(applySnapshot()) location.reload(); }
+      if(url.searchParams.get('clean')==='1'){ toggleCleanMode(true); }
+      if(url.searchParams.get('noclean')==='1'){ toggleCleanMode(false); }
+    }catch(_){}
+  })();
+
+  // Limpiar al iniciar si está activado, con guardia anti-bucle
+  (function cleanOnBootIfNeeded(){
+    if(SAFE_MODE) return;
+    try{
+      if(tryLS(()=>localStorage.getItem(CLEAN_KEY))==='1'){
+        const GUARD='dummys_boot_clean_done_v1';
+        if(!tryLS(()=>sessionStorage.getItem(GUARD))){
+          tryLS(()=>sessionStorage.setItem(GUARD,'1'));
+          tryLS(()=>localStorage.removeItem(CLEAN_KEY));
+          tryLS(()=>localStorage.removeItem(SNAP_KEY));
+          tryLS(()=>localStorage.clear());
+          tryLS(()=>sessionStorage.clear());
+          setTimeout(()=>location.reload(), 60);
+        }
+      }
+    }catch(_){}
+  })();
+
+  // Atajos: Shift+Alt+X reset, Shift+Alt+R restore, Shift+Alt+L toggle clean
+  window.addEventListener('keydown', (e)=>{
+    if(!(e.shiftKey && e.altKey)) return;
+    const k=e.key.toLowerCase();
+    if(k==='x'){ e.preventDefault(); hardResetNow(); }
+    if(k==='r'){ e.preventDefault(); if(applySnapshot()) location.reload(); }
+    if(k==='l'){
+      e.preventDefault();
+      const now = tryLS(()=>localStorage.getItem(CLEAN_KEY))==='1';
+      toggleCleanMode(!now);
+      if(navigator.vibrate) navigator.vibrate(30);
+    }
+  });
+
+  /*** === 7) Bloqueos básicos === ***/
+  document.addEventListener('contextmenu', e=>e.preventDefault());
+  document.addEventListener('selectstart', e=>e.preventDefault());
+  document.addEventListener('dragstart',  e=>e.preventDefault());
+  window.addEventListener('keydown', (e)=> {
+    if ((e.ctrlKey||e.metaKey) && (['+','-','=','0'].includes(e.key))) e.preventDefault();
+    if (['F11'].includes(e.key)) e.preventDefault();
+  });
+
+  /*** === 8) LÓGICA DEL BOTÓN RESET TOTAL === ***/
+  const btnReset = document.getElementById('btnResetTotal');
+  if(btnReset){
+    btnReset.addEventListener('click', (e)=>{
+      e.preventDefault();
+      // Confirmación táctil simple
+      const ok = confirm('¿Borrar datos locales (memoria/cache de la app) y reiniciar?');
+      if(!ok) return;
+      if(navigator.vibrate) navigator.vibrate(40);
+      hardResetNow();
+    }, {passive:false});
+  }
   </script>
 </body>
 </html>
