@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+  <title>Contec | Control Git</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; margin: 0; }
+    body { font-family: system-ui, Arial, sans-serif; background: #0b0c10; color: #e6e6e6; display: grid; place-items: center; }
+    .card {
+      width: min(800px, 92vw);
+      background: #111318;
+      border: 1px solid #20232a;
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.35);
+    }
+    h1 { margin: 0 0 12px; font-size: 1.25rem; color: #a5b4fc; }
+    p { margin: 0 0 16px; color: #bfc4cf; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+    button {
+      appearance: none; border: 0; border-radius: 12px; padding: 12px 16px;
+      background: #1f6feb; color: white; font-weight: 600; cursor: pointer;
+      transition: transform .05s ease, opacity .2s ease; min-width: 180px;
+    }
+    button.secondary { background: #3a3f4b; }
+    button:disabled { opacity: .6; cursor: not-allowed; }
+    .log {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      background: #0a0b0f; border: 1px solid #1a1d25; border-radius: 12px;
+      padding: 12px; height: 45vh; overflow: auto; white-space: pre-wrap; line-height: 1.25;
+    }
+    .status { font-size: .9rem; color: #9aa3b2; margin-bottom: 8px; }
+    .ok { color: #7bd88f; }
+    .err { color: #ff7675; }
+    .small { font-size: .85rem; color: #9aa3b2; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Contec – Operaciones Git en Raspberry Pi</h1>
+    <p class="small">Los botones ejecutan comandos locales vía un servicio Flask en <code>http://127.0.0.1:5000</code>.</p>
+
+    <div class="row">
+      <button id="btn-clone">Cargar archivos (clone)</button>
+      <button id="btn-update" class="secondary">Actualizar (pull)</button>
+    </div>
+
+    <div class="status" id="status">Listo.</div>
+    <div class="log" id="log" aria-live="polite"></div>
+  </div>
+
+  <script>
+    const logEl = document.getElementById('log');
+    const statusEl = document.getElementById('status');
+    const btnClone = document.getElementById('btn-clone');
+    const btnUpdate = document.getElementById('btn-update');
+
+    function setBusy(busy) {
+      btnClone.disabled = busy;
+      btnUpdate.disabled = busy;
+    }
+
+    function appendLog(text) {
+      logEl.textContent += text + "\n";
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    async function run(endpoint) {
+      setBusy(true);
+      statusEl.textContent = 'Ejecutando...';
+      statusEl.className = 'status';
+
+      appendLog(`→ POST ${endpoint}`);
+      try {
+        const res = await fetch(`http://127.0.0.1:5000${endpoint}`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({})
+        });
+        const data = await res.json();
+        appendLog(data.output || '(sin salida)');
+        if (data.ok) {
+          statusEl.textContent = '✔ Completado';
+          statusEl.className = 'status ok';
+        } else {
+          statusEl.textContent = '✖ Error';
+          statusEl.className = 'status err';
+        }
+      } catch (e) {
+        appendLog(String(e));
+        statusEl.textContent = '✖ Error de conexión con Flask (¿está corriendo?)';
+        statusEl.className = 'status err';
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    btnClone.addEventListener('click', () => run('/clone'));
+    btnUpdate.addEventListener('click', () => run('/update'));
+  </script>
+</body>
+</html>
